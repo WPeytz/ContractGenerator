@@ -26,9 +26,16 @@ st.set_page_config(page_title="Kontraktgenerator", layout="wide")
 # email = "anna@firma.dk"
 # password = "$2b$12$ANOTHER_HASH"
 
+def _to_plain(obj):
+    # Recursively convert SecretsProxy / mappings / sequences to plain Python types
+    if hasattr(obj, "items"):          # mapping-like (dict/SecretsProxy)
+        return {k: _to_plain(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [ _to_plain(v) for v in obj ]
+    return obj
+
 auth_conf = st.secrets.get("auth", {})
-# Convert Secrets proxy to a normal dict (deep) so the lib can modify it
-creds = json.loads(json.dumps(auth_conf.get("credentials", {})))
+creds = _to_plain(auth_conf.get("credentials", {}))  # now a real dict
 cookie_name = auth_conf.get("cookie_name", "contractgen")
 signature_key = auth_conf.get("signature_key", "CHANGE_ME_SECRET")
 cookie_expiry_days = auth_conf.get("cookie_expiry_days", 7)
