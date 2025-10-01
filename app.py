@@ -13,12 +13,12 @@ if load_dotenv:
 
 BASE = "https://api.app.legis365.com/public/v1.0"
 
-# API nøgle i session (enten fra .env eller fra input)
-if "api_key" not in st.session_state:
-    st.session_state.api_key = os.getenv("LEGIS_API_KEY", "")
+# API-nøgle hentes fra Streamlit Secrets (Cloud) eller miljøvariabel (lokalt)
+def has_api_key():
+    return bool(st.secrets.get("LEGIS_API_KEY", "") or os.getenv("LEGIS_API_KEY", ""))
 
 def get_headers():
-    key = st.session_state.api_key or os.getenv("LEGIS_API_KEY", "")
+    key = st.secrets.get("LEGIS_API_KEY", "") or os.getenv("LEGIS_API_KEY", "")
     return {"Accept": "application/json", "X-API-Key": key}
 
 def safe_slug(s, n=120):
@@ -42,12 +42,13 @@ def paged(path, page_size=500):
 
 st.set_page_config(page_title="Kontraktgenerator", layout="wide")
 st.title("Kontraktgenerator")
+if not has_api_key():
+    st.warning("Appen har ingen API-nøgle endnu. Tilføj `LEGIS_API_KEY` i Secrets (⚙️ → Secrets) for at hente data.")
 
-# Sidebar: API nøgle + skabelonvalg
 with st.sidebar:
     st.subheader("Indstillinger")
-    st.text_input("API nøgle", type="password", key="api_key",
-                  help="Gemmes kun i denne session. Brug helst LEGIS_API_KEY i en .env-fil.")
+    if not has_api_key():
+        st.error("Mangler API-nøgle. Tilføj `LEGIS_API_KEY` i Streamlit Secrets (Cloud) eller som miljøvariabel lokalt.")
 
     # Find skabeloner
     template_files = sorted(glob.glob("templates/*.docx"))
@@ -66,8 +67,8 @@ with col1:
         json.dump(journals, open("journals.json","w"), ensure_ascii=False, indent=2)
         st.success(f"Hentede {len(contacts)} kontakter og {len(journals)} journaler.")
 
-contacts = {c["id"]: c for c in json.load(open("contacts.json"))} if Path("contacts.json").exists() else {}
-journals = json.load(open("journals.json")) if Path("journals.json").exists() else []
+contacts = list(paged("/public/v1.0/Contacts"))
+journals = list(paged("/public/v1.0/Journals"))
 st.write(f"Indlæst {len(contacts)} kontakter, {len(journals)} journaler.")
 
 query = st.text_input("Søg i journaler (navn/nummer):")
@@ -104,8 +105,8 @@ def generate_for(j, template_path: str):
 colA, colB = st.columns(2)
 with colA:
     if st.button("Generér for valgte"):
-        if not st.session_state.api_key:
-            st.error("Manglende API nøgle. Tilføj i sidepanelet eller i .env-filen")
+        if not has_api_key():
+            st.error("Manglende API-nøgle. Angiv `LEGIS_API_KEY` i Secrets (⚙️ → Secrets) eller som miljøvariabel.")
         elif not glob.glob("templates/*.docx"):
             st.error("Ingen skabeloner fundet i templates/-mappen.")
         else:
@@ -137,8 +138,8 @@ with colA:
 
 with colB:
     if st.button("Generér ALLE journaler"):
-        if not st.session_state.api_key:
-            st.error("Manglende API nøgle. Tilføj i sidepanelet eller i .env-filen")
+        if not has_api_key():
+            st.error("Manglende API-nøgle. Angiv `LEGIS_API_KEY` i Secrets (⚙️ → Secrets) eller som miljøvariabel.")
         elif not glob.glob("templates/*.docx"):
             st.error("Ingen skabeloner fundet i templates/-mappen.")
         else:
