@@ -27,7 +27,8 @@ st.set_page_config(page_title="Kontraktgenerator", layout="wide")
 # password = "$2b$12$ANOTHER_HASH"
 
 auth_conf = st.secrets.get("auth", {})
-creds = auth_conf.get("credentials", {})
+# Convert Secrets proxy to a normal dict (deep) so the lib can modify it
+creds = json.loads(json.dumps(auth_conf.get("credentials", {})))
 cookie_name = auth_conf.get("cookie_name", "contractgen")
 signature_key = auth_conf.get("signature_key", "CHANGE_ME_SECRET")
 cookie_expiry_days = auth_conf.get("cookie_expiry_days", 7)
