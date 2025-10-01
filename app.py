@@ -58,17 +58,26 @@ with st.sidebar:
         index=0,
         disabled=not template_files,
     )
+    # Init session state for data
+    if "contacts" not in st.session_state:
+        st.session_state.contacts = {}
+    if "journals" not in st.session_state:
+        st.session_state.journals = []
 
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("Hent seneste Kontakter & Journaler"):
-        contacts=list(paged("/Contacts")); journals=list(paged("/Journals"))
-        json.dump(contacts, open("contacts.json","w"), ensure_ascii=False, indent=2)
-        json.dump(journals, open("journals.json","w"), ensure_ascii=False, indent=2)
-        st.success(f"Hentede {len(contacts)} kontakter og {len(journals)} journaler.")
+        if st.button("Hent seneste Kontakter & Journaler"):
+            contacts_list = list(paged("/public/v1.0/Contacts"))
+            st.session_state.contacts = {c["id"]: c for c in contacts_list}
+            st.session_state.journals = list(paged("/public/v1.0/Journals"))
+            json.dump(st.session_state.contacts, open("contacts.json","w"), ensure_ascii=False, indent=2)
+            json.dump(st.session_state.journals, open("journals.json","w"), ensure_ascii=False, indent=2)
+            st.success(f"Hentede {len(st.session_state.contacts)} kontakter og {len(st.session_state.journals)} journaler.")
 
-contacts = list(paged("/public/v1.0/Contacts"))
-journals = list(paged("/public/v1.0/Journals"))
+contacts = st.session_state.contacts
+journals = st.session_state.journals
+if not contacts or not journals:
+    st.info("Tryk på 'Hent seneste Kontakter & Journaler' først.")
 st.write(f"Indlæst {len(contacts)} kontakter, {len(journals)} journaler.")
 
 query = st.text_input("Søg i journaler (navn/nummer):")
