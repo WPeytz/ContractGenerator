@@ -36,9 +36,20 @@ def _to_plain(obj):
 
 auth_conf = st.secrets.get("auth", {})
 creds = _to_plain(auth_conf.get("credentials", {}))  # now a real dict
+# Fix: allow email login by mapping emails -> credentials
+def normalize_credentials(creds):
+    new_creds = {"usernames": {}}
+    for user, data in creds.get("usernames", {}).items():
+        # Use email as the login key instead of internal username
+        email = data.get("email", user)
+        new_creds["usernames"][email] = data
+    return new_creds
 cookie_name = auth_conf.get("cookie_name", "contractgen")
 signature_key = auth_conf.get("signature_key", "CHANGE_ME_SECRET")
 cookie_expiry_days = auth_conf.get("cookie_expiry_days", 7)
+
+creds = _to_plain(auth_conf.get("credentials", {}))
+creds = normalize_credentials(creds)  # NEW LINE
 
 authenticator = stauth.Authenticate(
     creds,
