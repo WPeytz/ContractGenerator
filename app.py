@@ -33,10 +33,10 @@ signature_key = auth_conf.get("signature_key", "CHANGE_ME_SECRET")
 cookie_expiry_days = auth_conf.get("cookie_expiry_days", 7)
 
 authenticator = stauth.Authenticate(
-    credentials=creds,
-    cookie_name=cookie_name,
-    key=signature_key,
-    cookie_expiry_days=cookie_expiry_days,
+    creds,
+    cookie_name,
+    signature_key,
+    cookie_expiry_days
 )
 
 name, auth_status, username = authenticator.login("Log ind", "main")
