@@ -1,4 +1,5 @@
 import os, json, requests, re, unicodedata, glob
+import streamlit_authenticator as stauth
 from io import BytesIO
 import streamlit as st
 from docxtpl import DocxTemplate
@@ -7,6 +8,49 @@ try:
     from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None
+
+st.set_page_config(page_title="Kontraktgenerator", layout="wide")    
+
+# --- Autentifikation (kun adgang for teamet) ---
+# Forventet struktur i Streamlit Secrets (TOML):
+# [auth]
+# cookie_name = "mk_contractgen"
+# signature_key = "REPLACE_WITH_RANDOM_LONG_SECRET"
+# cookie_expiry_days = 7
+# [auth.credentials.usernames.mette]
+# name = "Mette Klingsten"
+# email = "mk@mklaw.dk"
+# password = "$2b$12$EXAMPLE_BCRYPT_HASH"
+# [auth.credentials.usernames.anna]
+# name = "Anna Jensen"
+# email = "anna@firma.dk"
+# password = "$2b$12$ANOTHER_HASH"
+
+auth_conf = st.secrets.get("auth", {})
+creds = auth_conf.get("credentials", {})
+cookie_name = auth_conf.get("cookie_name", "contractgen")
+signature_key = auth_conf.get("signature_key", "CHANGE_ME_SECRET")
+cookie_expiry_days = auth_conf.get("cookie_expiry_days", 7)
+
+authenticator = stauth.Authenticate(
+    credentials=creds,
+    cookie_name=cookie_name,
+    key=signature_key,
+    cookie_expiry_days=cookie_expiry_days,
+)
+
+name, auth_status, username = authenticator.login("Log ind", "main")
+
+if auth_status is False:
+    st.error("Ugyldigt brugernavn eller adgangskode")
+    st.stop()
+elif auth_status is None:
+    st.info("Indtast brugernavn og adgangskode for at fortsætte")
+    st.stop()
+
+# Når man er logget ind, vis logout-knap i sidepanelet
+with st.sidebar:
+    authenticator.logout("Log ud")
 
 if load_dotenv:
     load_dotenv()
