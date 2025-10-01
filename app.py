@@ -47,7 +47,7 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days
 )
 
-name, auth_status, username = authenticator.login("Log ind", "main")
+name, auth_status, username = authenticator.login(location="main")
 
 if auth_status is False:
     st.error("Ugyldigt brugernavn eller adgangskode")
