@@ -67,9 +67,9 @@ with st.sidebar:
 col1, col2 = st.columns(2)
 with col1:
         if st.button("Hent seneste Kontakter & Journaler"):
-            contacts_list = list(paged("/public/v1.0/Contacts"))
+            contacts_list = list(paged("/Contacts"))
             st.session_state.contacts = {c["id"]: c for c in contacts_list}
-            st.session_state.journals = list(paged("/public/v1.0/Journals"))
+            st.session_state.journals = list(paged("/Journals"))
             json.dump(st.session_state.contacts, open("contacts.json","w"), ensure_ascii=False, indent=2)
             json.dump(st.session_state.journals, open("journals.json","w"), ensure_ascii=False, indent=2)
             st.success(f"Hentede {len(st.session_state.contacts)} kontakter og {len(st.session_state.journals)} journaler.")
