@@ -36,6 +36,25 @@ def _to_plain(obj):
 
 auth_conf = st.secrets.get("auth", {})
 creds = _to_plain(auth_conf.get("credentials", {}))  # now a real dict
+# --- Allow login with email as the username (and keep any short aliases) ---
+_users = creds.get("usernames", {}) or {}
+
+# Build an augmented mapping:
+aug = dict(_users)  # keep existing aliases (e.g., "mette", "william")
+for uname, data in list(_users.items()):
+    email = (data or {}).get("email")
+    if not email:
+        continue
+    # Add multiple keys that will all point to the same user record
+    aug[email] = data                     # exact email
+    aug[email.lower()] = data             # lowercase email (just in case)
+    aug[email.strip()] = data             # trimmed
+    # Also add a safe variant (no special chars) to be extra robust
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", email)
+    aug[safe] = data
+
+# Replace the usernames dict the authenticator sees
+creds["usernames"] = aug
 cookie_name = auth_conf.get("cookie_name", "contractgen")
 signature_key = auth_conf.get("signature_key", "CHANGE_ME_SECRET")
 cookie_expiry_days = auth_conf.get("cookie_expiry_days", 7)
