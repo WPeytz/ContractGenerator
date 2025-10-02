@@ -252,6 +252,12 @@ def extract_from_contract(pdf_path: str):
     m_conf = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[-.)]?\s*(Confidentiality|Tavshedspligt)', full, re.I)
     m_ip   = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[-.)]?\s*(Intellectual\s*Property|Immaterielle\s*rettigheder)', full, re.I)
 
+    # If we matched explicit clause headings, store the clause numbers
+    if m_conf and not out.get("ConfidentialityClauseRef"):
+        out["ConfidentialityClauseRef"] = m_conf.group(1)
+    if m_ip and not out.get("EmploymentClauseRef"):
+        out["EmploymentClauseRef"] = m_ip.group(1)
+
     # (equivalently, you could escape the hyphen)
     # m_conf = re.search(... r'\s*[\.\-)]?\s* ...')
     # m_ip   = re.search(... r'\s*[\.\-)]?\s* ...')
