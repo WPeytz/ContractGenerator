@@ -208,7 +208,7 @@ def extract_from_contract(pdf_path: str):
     r"(?:base|fixed)?\s*salary\s*(?:is|of|amounts\s*to)\s*(?:DKK|kr\.?)?\s*([\d\.,]+)\s*(?:per\s*month|pr\.\s*måned|monthly)",
     r"\bmånedsløn\b[^\d]*([\d\.,]+)",
     r"\bårsløn\b[^\d]*([\d\.,]+)"
-]
+    ]
     monthly = None
     for pat in patterns:
         m4 = re.search(pat, full, re.I)
@@ -239,6 +239,32 @@ def extract_from_contract(pdf_path: str):
         val = parse_dk_amount(m_ba.group(1))
         if val:
             out["BonusAmount"] = val
+
+        # --- Clause references (optional) ---
+    # Try to detect clause numbers for IP (immaterielle rettigheder) and confidentiality (tavshedspligt)
+    # Patterns handle forms like:
+    #  - "12. Confidentiality"
+    #  - "Section 12 - Confidentiality"
+    #  - "pkt. 12 Tavshedspligt"
+    #  - "clause 10 on intellectual property"
+    m_conf = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[\.-)]?\s*(Confidentiality|Tavshedspligt)', full, re.I)
+    if m_conf and not out.get("ConfidentialityClauseRef"):
+        out["ConfidentialityClauseRef"] = m_conf.group(1)
+
+    m_ip = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[\.-)]?\s*(Intellectual\s*Property|Immaterielle\s*rettigheder)', full, re.I)
+    if m_ip and not out.get("EmploymentClauseRef"):
+        out["EmploymentClauseRef"] = m_ip.group(1)
+
+    # Fallbacks like "clause 10 on confidentiality" / "pkt. 10 om immaterielle rettigheder"
+    if not out.get("ConfidentialityClauseRef"):
+        m = re.search(r'(?:clause|pkt\.?|punkt)\s*(\d+(?:\.\d+)*)\s*(?:om|on)?\s*(?:confidentiality|tavshedspligt)', full, re.I)
+        if m:
+            out["ConfidentialityClauseRef"] = m.group(1)
+
+    if not out.get("EmploymentClauseRef"):
+        m = re.search(r'(?:clause|pkt\.?|punkt)\s*(\d+(?:\.\d+)*)\s*(?:om|on)?\s*(?:intellectual\s*property|immaterielle\s*rettigheder)', full, re.I)
+        if m:
+            out["EmploymentClauseRef"] = m.group(1)        
 
     return out
 
@@ -371,14 +397,14 @@ def build_context(contract_data, payslip_data, ui):
         "PhoneTransferIncluded": ui.get("PhoneTransferIncluded"),
         "PhoneNumber": ui.get("PhoneNumber"),
         "ManagerName": ui.get("ManagerName"),
-        "EmploymentClauseRef": ui.get("EmploymentClauseRef"),
+        "EmploymentClauseRef": contract_data.get("EmploymentClauseRef") or ui.get("EmploymentClauseRef"),
+        "ConfidentialityClauseRef": contract_data.get("ConfidentialityClauseRef") or ui.get("ConfidentialityClauseRef"),
         "GroupName": ui.get("GroupName"),
         "SignatureDeadline": ui.get("SignatureDeadline"),
         "SignatureMonth": ui.get("SignatureMonth"),
         "SignatureYear": ui.get("SignatureYear"),
         "RepName": ui.get("RepName"),
         "RepTitle": ui.get("RepTitle"),
-        "ConfidentialityClauseRef": ui.get("ConfidentialityClauseRef"),
         "AccruedVacationDays": ui.get("AccruedVacationDays"),
         "VacationFundName": ui.get("VacationFundName"),
         "BonusEligible": ui.get("BonusEligible"),
