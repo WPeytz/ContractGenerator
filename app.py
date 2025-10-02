@@ -13,6 +13,9 @@ try:
 except locale.Error:
     pass  # fallback if locale isn't available
 
+load_dotenv()
+
+st.set_page_config(page_title="Kontraktgenerator", layout="wide")
 
 def _to_plain(obj):
     # Recursively convert SecretsProxy / mappings / sequences to plain Python types
@@ -48,9 +51,6 @@ elif auth_status is None:
 with st.sidebar:
     authenticator.logout("Log ud")
 
-
-    load_dotenv()
-
 BASE = "https://api.app.legis365.com/public/v1.0"
 
 # API-nøgle hentes fra Streamlit Secrets (Cloud) eller miljøvariabel (lokalt)
@@ -80,7 +80,6 @@ def paged(path, page_size=500):
         if len(items) < page_size: break
         page+=1
 
-st.set_page_config(page_title="Kontraktgenerator", layout="wide")
 st.title("Kontraktgenerator")
 if not has_api_key():
     st.warning("Appen har ingen API-nøgle endnu. Tilføj `LEGIS_API_KEY` i Secrets (⚙️ → Secrets) for at hente data.")
@@ -283,6 +282,10 @@ def format_currency(val):
 def build_context(contract_data, payslip_data, ui):
     sal = payslip_data.get("MonthlySalary") or contract_data.get("MonthlySalary") or ui.get("MonthlySalary")
     norm_sal = parse_dk_amount(sal) or sal
+    # Pretty-format bonus amount for Danish output
+    ba_raw = ui.get("BonusAmount")
+    ba_norm = parse_dk_amount(ba_raw) if ba_raw else ""
+    ba_fmt = format_currency(ba_norm) if ba_norm else ""
     return {
         "C_Name": contract_data.get("C_Name") or ui.get("C_Name"),
         "C_Address": ui.get("C_Address", ""),
@@ -292,6 +295,13 @@ def build_context(contract_data, payslip_data, ui):
         "MonthlySalary": format_currency(norm_sal) if norm_sal else "",
         "BonusYear": ui.get("BonusYear"),
         "BonusAmount": ui.get("BonusAmount"),
+        "BonusAmountFmt": ba_fmt,
+        # LTI (optional)
+        "LTIEligible": ui.get("LTIEligible"),
+        "LTIProgramName": ui.get("LTIProgramName"),
+        "LTIGoodLeaver": ui.get("LTIGoodLeaver"),
+        "LTISavingShareName": ui.get("LTISavingShareName"),
+        "LTIMatchingShareName": ui.get("LTIMatchingShareName"),
         "EmploymentStart": contract_data.get("EmploymentStart") or ui.get("EmploymentStart"),
         "TerminationDate": ui.get("TerminationDate"),
         "SeparationDate": ui.get("SeparationDate"),
@@ -315,6 +325,9 @@ def build_context(contract_data, payslip_data, ui):
         "AccruedVacationDays": ui.get("AccruedVacationDays"),
         "VacationFundName": ui.get("VacationFundName"),
         "BonusEligible": ui.get("BonusEligible"),
+        "MobileCompIncluded": ui.get("MobileCompIncluded"),
+        "MobileCompAmount": ui.get("MobileCompAmount"),
+        "MobileCompStartDate": ui.get("MobileCompStartDate"),
     }
 
 # --- NY SEKTIONS-UI ---
@@ -373,6 +386,11 @@ ui_ctx["ConfidentialityClauseRef"] = st.text_input("Henvisning til tavshedspligt
 ui_ctx["AccruedVacationDays"] = st.text_input("Optjente feriedage (antal)", "2,08")
 ui_ctx["VacationFundName"] = st.text_input("Feriefond (fx FerieKonto)", "FerieKonto")
 ui_ctx["BonusEligible"] = st.checkbox("Bonus-ordning (STI) gælder?", value=False)
+ui_ctx["LTIEligible"] = st.checkbox("Aktiebaseret aflønning (LTI) gælder?", value=False)
+ui_ctx["LTIProgramName"] = st.text_input("Navn på LTI-program", "Employee Ownership Program")
+ui_ctx["LTIGoodLeaver"] = st.checkbox("Good leaver?", value=True)
+ui_ctx["LTISavingShareName"] = st.text_input("Navn på 'Saving Shares' (fx B-aktier)", "B-aktier")
+ui_ctx["LTIMatchingShareName"] = st.text_input("Navn på 'Matching Shares'", "Matching Shares")
 
 # Vælg skabelon (gælder både enkelt- og batch-generering)
 template_files = sorted(glob.glob("templates/*.docx"))
@@ -449,6 +467,7 @@ def generate_for(j, template_path: str):
 
     return filename.name, bio, None
 
+
 colA, colB = st.columns(2)
 with colA:
     if st.button("Generér for valgte"):
@@ -457,6 +476,7 @@ with colA:
         elif not glob.glob("templates/*.docx"):
             st.error("Ingen skabeloner fundet i templates/-mappen.")
         else:
+            sel_template = st.session_state.sel_template
             count = 0
             generated = []
             by_num = {j.get('number'): j for j in journals}
@@ -490,6 +510,7 @@ with colB:
         elif not glob.glob("templates/*.docx"):
             st.error("Ingen skabeloner fundet i templates/-mappen.")
         else:
+            sel_template = st.session_state.sel_template
             count = 0
             generated = []
             for j in journals:
