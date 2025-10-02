@@ -247,13 +247,14 @@ def extract_from_contract(pdf_path: str):
     #  - "Section 12 - Confidentiality"
     #  - "pkt. 12 Tavshedspligt"
     #  - "clause 10 on intellectual property"
-    m_conf = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[\.-)]?\s*(Confidentiality|Tavshedspligt)', full, re.I)
-    if m_conf and not out.get("ConfidentialityClauseRef"):
-        out["ConfidentialityClauseRef"] = m_conf.group(1)
 
-    m_ip = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[\.-)]?\s*(Intellectual\s*Property|Immaterielle\s*rettigheder)', full, re.I)
-    if m_ip and not out.get("EmploymentClauseRef"):
-        out["EmploymentClauseRef"] = m_ip.group(1)
+    # put hyphen first
+    m_conf = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[-.)]?\s*(Confidentiality|Tavshedspligt)', full, re.I)
+    m_ip   = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[-.)]?\s*(Intellectual\s*Property|Immaterielle\s*rettigheder)', full, re.I)
+
+    # (equivalently, you could escape the hyphen)
+    # m_conf = re.search(... r'\s*[\.\-)]?\s* ...')
+    # m_ip   = re.search(... r'\s*[\.\-)]?\s* ...')
 
     # Fallbacks like "clause 10 on confidentiality" / "pkt. 10 om immaterielle rettigheder"
     if not out.get("ConfidentialityClauseRef"):
