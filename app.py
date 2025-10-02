@@ -337,8 +337,10 @@ def format_currency(val):
 def build_context(contract_data, payslip_data, ui):
     sal = payslip_data.get("MonthlySalary") or contract_data.get("MonthlySalary") or ui.get("MonthlySalary")
     norm_sal = parse_dk_amount(sal) or sal
-    # Pretty-format bonus amount for Danish output
-    ba_raw = ui.get("BonusAmount")
+    # Pretty-format bonus amount for Danish output (only if bonus is enabled)
+    bonus_enabled = ui.get("BonusEligible")
+    by = ui.get("BonusYear") if bonus_enabled else ""
+    ba_raw = ui.get("BonusAmount") if bonus_enabled else ""
     ba_norm = parse_dk_amount(ba_raw) if ba_raw else ""
     ba_fmt = format_currency(ba_norm) if ba_norm else ""
     return {
@@ -348,8 +350,8 @@ def build_context(contract_data, payslip_data, ui):
         "P_Name": contract_data.get("P_Name") or ui.get("P_Name"),
         "P_Address": ui.get("P_Address", ""),
         "MonthlySalary": format_currency(norm_sal) if norm_sal else "",
-        "BonusYear": ui.get("BonusYear"),
-        "BonusAmount": ui.get("BonusAmount"),
+        "BonusYear": by,
+        "BonusAmount": ba_raw,
         "BonusAmountFmt": ba_fmt,
         # LTI (optional)
         "LTIEligible": ui.get("LTIEligible"),
@@ -413,8 +415,6 @@ ui_ctx["C_CoRegCVR"] = st.text_input("CVR", auto.get("C_CoRegCVR",""))
 ui_ctx["P_Name"] = st.text_input("Medarbejder", auto.get("P_Name",""))
 ui_ctx["P_Address"] = st.text_input("Medarbejder adresse", auto.get("P_Address", ""))
 ui_ctx["MonthlySalary"] = st.text_input("Månedsløn (DKK)", auto.get("MonthlySalary",""))
-ui_ctx["BonusYear"] = st.text_input("Bonusår", auto.get("BonusYear",""))
-ui_ctx["BonusAmount"] = st.text_input("Bonusbeløb (DKK)", auto.get("BonusAmount",""))
 ui_ctx["EmploymentStart"] = st.text_input("Ansættelsesstart", auto.get("EmploymentStart",""))
 ui_ctx["TerminationDate"] = st.text_input("Opsigelsesdato", auto.get("TerminationDate",""))
 ui_ctx["SeparationDate"] = st.text_input("Fratrædelsesdato", auto.get("SeparationDate",""))
@@ -454,6 +454,13 @@ ui_ctx["SignatureYear"]  = st.text_input("Underskriftsår (fx 2025)", "")
 ui_ctx["RepName"]  = st.text_input("Virksomhedens repræsentant (navn)", "")
 ui_ctx["RepTitle"] = st.text_input("Virksomhedens repræsentant Titel (fx Partner / HR-chef)", "")
 ui_ctx["BonusEligible"] = st.checkbox("Bonus-ordning (STI) gælder?", value=False)
+if ui_ctx["BonusEligible"]:
+    ui_ctx["BonusYear"] = st.text_input("Bonusår", auto.get("BonusYear",""))
+    ui_ctx["BonusAmount"] = st.text_input("Bonusbeløb (DKK)", auto.get("BonusAmount",""))
+else:
+    # Clear values so the template won't use stale data when bonus is disabled
+    ui_ctx["BonusYear"] = ""
+    ui_ctx["BonusAmount"] = ""
 ui_ctx["LTIEligible"] = st.checkbox("Aktiebaseret aflønning (LTI) gælder?", value=False)
 if ui_ctx["LTIEligible"]:
     ui_ctx["LTIProgramName"] = st.text_input("Navn på LTI-program", "Employee Ownership Program")
