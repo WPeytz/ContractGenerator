@@ -117,62 +117,85 @@ def parse_dk_date(s: str):
         return s
 
 def extract_from_contract(pdf_path: str):
+    """Parse employer/employee blocks anchored on CVR and CPR to handle multi-column PDFs."""
     out = {}
     with pdfplumber.open(pdf_path) as pdf:
         pages = [page.extract_text() or "" for page in pdf.pages]
     full = "\n".join(pages)
-    t = _clean(full)
 
     if show_debug:
         st.expander("Kontrakt: rå tekst").text(full[:20000])
 
-    # CVR
-    m = re.search(r'\bCVR\b[\s\-:]*([0-9]{8})', t, re.I)
-    if m:
-        out['C_CoRegCVR'] = m.group(1)
+    # Scan by lines so we can look around anchors
+    lines = [l.strip() for l in full.splitlines()]
+    lines = [l for l in lines if l is not None]
 
-    # Employer / employee blocks around BETWEEN ... AND ...
-    m_between = re.search(r'BETWEEN\s+(.+?)\s+AND\s+(.+)', full, re.I | re.S)
-    if m_between:
-        emp_block = _clean(m_between.group(1))
-        ee_block  = _clean(m_between.group(2))
+    # --- Employer by CVR anchor ---
+    cvr_idx = next((i for i, l in enumerate(lines) if re.search(r"\bCVR\b\s*:?\s*\d{8}", l, re.I)), None)
+    if cvr_idx is not None:
+        m = re.search(r"\bCVR\b\s*:?\s*(\d{8})", lines[cvr_idx], re.I)
+        if m:
+            out["C_CoRegCVR"] = m.group(1)
 
-        # Employer
-        emp_lines = [l.strip() for l in re.split(r'[\r\n]+', emp_block) if l.strip()]
-        if emp_lines:
-            out['C_Name'] = emp_lines[0]
-        addr_parts = []
-        for line in emp_lines[1:5]:
-            addr_parts.append(line)
-            if re.search(DK_POSTAL, line):
-                break
-        if addr_parts:
-            out['C_Address'] = " ".join(addr_parts)
+        # Up to 3 lines above CVR tend to be: name, street, postal/city
+        window = [l for l in lines[max(0, cvr_idx-3):cvr_idx] if l]
+        if window:
+            out["C_Name"] = window[0]
+            addr_parts = []
+            for w in window[1:]:
+                addr_parts.append(w)
+            # If we see a postal code, keep up to that line
+            for j, w in enumerate(addr_parts):
+                if re.search(DK_POSTAL, w):
+                    addr_parts = addr_parts[:j+1]
+                    break
+            if addr_parts:
+                out["C_Address"] = _clean(" ".join(addr_parts))
 
-        # Employee: name = text until first digit/punctuation that typically starts address
-        m_name = re.search(r'^([^\d,\(\)\n\r]+)', ee_block)
-        if m_name:
-            out['P_Name'] = _clean(m_name.group(1))
-        # Address = first substring carrying a DK postal code
-        m_addr = re.search(r'([\wÆØÅæøå\.\-\,\s]+?\b\d{4}\b\s+[\wÆØÅæøå\-\s]+)', ee_block)
-        if m_addr:
-            out['P_Address'] = _clean(m_addr.group(1))
+    # --- Employee by CPR anchor ---
+    cpr_idx = next((i for i, l in enumerate(lines) if re.search(r"\bCPR\b\s*:?$", l, re.I) or re.search(r"\bCPR\b\s*:", l, re.I)), None)
+    if cpr_idx is not None:
+        window = [l for l in lines[max(0, cpr_idx-4):cpr_idx] if l]
+        if window:
+            # Name = last line without digits
+            name_line = None
+            for w in reversed(window):
+                if not re.search(r"\d", w):
+                    name_line = w
+                    break
+            if name_line:
+                out["P_Name"] = _clean(name_line)
+            # Address = last line that contains digits / postal code
+            addr_candidates = [w for w in window if re.search(DK_POSTAL, w) or re.search(r"\d", w)]
+            if addr_candidates:
+                out["P_Address"] = _clean(addr_candidates[-1])
+    else:
+        # Fallback if no CPR line is present: grab after AND
+        m_and = re.search(r"\bAND\b\s*(.+)$", full, re.I | re.M)
+        if m_and:
+            tail = [t.strip() for t in m_and.group(1).splitlines() if t.strip()]
+            if tail:
+                out.setdefault("P_Name", tail[0])
+            for t in tail[1:4]:
+                if re.search(DK_POSTAL, t):
+                    out.setdefault("P_Address", _clean(t))
+                    break
 
-    # Employment start
-    m3 = re.search(r'With effect from ([A-Za-z0-9,\.\-\/\s]+?),\s*the Employee is employed', full, re.I)
+    # Employment start (as before)
+    m3 = re.search(r"With effect from ([A-Za-z0-9,\.\-\/\s]+?),\s*the Employee is employed", full, re.I)
     if m3:
-        out['EmploymentStart'] = parse_dk_date(m3.group(1))
+        out["EmploymentStart"] = parse_dk_date(m3.group(1))
 
-    # Salary (handle annual or monthly)
+    # Salary: only accept when explicit labels are present
     patterns = [
-        r'fixed\s+annual\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)',
-        r'(?:gross\s+)?monthly\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)',
-        r'\bmånedsløn\b[^\d]*([\d\.,]+)',
-        r'\bårsløn\b[^\d]*([\d\.,]+)'
+        r"fixed\s+annual\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)",
+        r"(?:gross\s+)?monthly\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)",
+        r"\bmånedsløn\b[^\d]*([\d\.,]+)",
+        r"\bårsløn\b[^\d]*([\d\.,]+)"
     ]
     monthly = None
     for pat in patterns:
-        m4 = re.search(pat, t, re.I)
+        m4 = re.search(pat, full, re.I)
         if not m4:
             continue
         amt = parse_dk_amount(m4.group(1))
@@ -185,8 +208,9 @@ def extract_from_contract(pdf_path: str):
         except Exception:
             pass
 
-    if monthly is not None:
-        out['MonthlySalary'] = f"{monthly:.2f}".rstrip('0').rstrip('.')
+    # Guard against floor numbers like "3.sal" etc.
+    if monthly is not None and monthly > 5000:
+        out["MonthlySalary"] = f"{monthly:.2f}".rstrip('0').rstrip('.')
 
     return out
 
