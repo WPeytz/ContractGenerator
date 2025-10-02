@@ -203,11 +203,12 @@ def extract_from_contract(pdf_path: str):
 
     # Salary: only when clearly labeled (guards against '3.sal' etc.)
     patterns = [
-        r"fixed\s+annual\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)",
-        r"(?:gross\s+)?monthly\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)",
-        r"\bmånedsløn\b[^\d]*([\d\.,]+)",
-        r"\bårsløn\b[^\d]*([\d\.,]+)"
-    ]
+    r"fixed\s+annual\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)",
+    r"(?:gross\s+)?monthly\s+salary\s+(?:is|of)\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)",
+    r"(?:base|fixed)?\s*salary\s*(?:is|of|amounts\s*to)\s*(?:DKK|kr\.?)?\s*([\d\.,]+)\s*(?:per\s*month|pr\.\s*måned|monthly)",
+    r"\bmånedsløn\b[^\d]*([\d\.,]+)",
+    r"\bårsløn\b[^\d]*([\d\.,]+)"
+]
     monthly = None
     for pat in patterns:
         m4 = re.search(pat, full, re.I)
@@ -275,6 +276,22 @@ def extract_from_payslip(pdf_path: str):
         if num > 5000:
             out['MonthlySalary'] = f"{num:.2f}".rstrip('0').rstrip('.')
             break
+    
+    # Fallback: pick the highest plausible amount on a line mentioning "løn"
+    if 'MonthlySalary' not in out:
+        salary_candidates = []
+        for mline in re.finditer(r'(?i)l[øo]n[^\n\r]{0,40}?([\d\.,]+)', full):
+            val = parse_dk_amount(mline.group(1))
+            try:
+                num = float(val)
+                # Heuristic range for monthly salary in DKK
+                if 5000 < num < 300000:
+                    salary_candidates.append(num)
+            except Exception:
+                pass
+        if salary_candidates:
+            best = max(salary_candidates)
+            out['MonthlySalary'] = f"{best:.2f}".rstrip('0').rstrip('.')
 
     # Employee name if present
     m3 = re.search(r'\bNavn\b\s*:\s*([^\n\r]+)', full, re.I)
@@ -405,8 +422,10 @@ ui_ctx["GardenLeaveStart"] = st.text_input("Fritstilling fra", auto.get("GardenL
 ui_ctx["HealthInsuranceIncluded"] = st.checkbox("Behold sundhedsforsikring?", value=False)
 ui_ctx["PensionIncluded"] = st.checkbox("Behold pensionsordning?", value=False)
 ui_ctx["LunchSchemeIncluded"] = st.checkbox("Med i frokostordning indtil fritstilling?", value=False)
-ui_ctx["AccrualMonth"] = st.text_input("Optjeningsmåned (fx september)", "")
-ui_ctx["AccrualYear"] = st.text_input("Optjeningsår (fx 2025)", "")
+ui_ctx["AccrualMonth"] = st.text_input("Ferie Optjeningsmåned (fx september)", "")
+ui_ctx["AccrualYear"] = st.text_input("Ferie Optjeningsår (fx 2025)", "")
+ui_ctx["AccruedVacationDays"] = st.text_input("Optjente feriedage (antal)", "2,08")
+ui_ctx["VacationFundName"] = st.text_input("Feriefond (fx FerieKonto)", "FerieKonto")
 # --- Mobilkompensation ---
 ui_ctx["MobileCompIncluded"] = st.checkbox("Mobilkompensation med?", value=False)
 if ui_ctx["MobileCompIncluded"]:
@@ -432,8 +451,6 @@ ui_ctx["SignatureYear"]  = st.text_input("Underskriftsår (fx 2025)", "")
 ui_ctx["RepName"]  = st.text_input("Virksomhedens repræsentant (navn)", "")
 ui_ctx["RepTitle"] = st.text_input("Titel (fx Partner / HR-chef)", "")
 ui_ctx["ConfidentialityClauseRef"] = st.text_input("Henvisning til tavshedspligt (pkt. i ansættelseskontrakten)", "")
-ui_ctx["AccruedVacationDays"] = st.text_input("Optjente feriedage (antal)", "2,08")
-ui_ctx["VacationFundName"] = st.text_input("Feriefond (fx FerieKonto)", "FerieKonto")
 ui_ctx["BonusEligible"] = st.checkbox("Bonus-ordning (STI) gælder?", value=False)
 ui_ctx["LTIEligible"] = st.checkbox("Aktiebaseret aflønning (LTI) gælder?", value=False)
 if ui_ctx["LTIEligible"]:
