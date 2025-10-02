@@ -226,6 +226,19 @@ def extract_from_contract(pdf_path: str):
     if monthly is not None and monthly > 5000:
         out["MonthlySalary"] = f"{monthly:.2f}".rstrip('0').rstrip('.')
 
+    # --- Bonus info (optional) ---
+    # Try year patterns: "bonusåret 2025", "bonus for 2025", "bonus year 2025"
+    m_by = re.search(r'\bbonus(?:året|year)?\s*(?:for\s*)?(20\d{2})\b', full, re.I)
+    if m_by:
+        out["BonusYear"] = m_by.group(1)
+
+    # Try amount patterns: "bonus på 50.000 kr", "bonus of DKK 50,000.00"
+    m_ba = re.search(r'bonus\s*(?:på|of)?\s*(?:DKK|kr\.?)?\s*([\d\.\,]+)', full, re.I)
+    if m_ba:
+        val = parse_dk_amount(m_ba.group(1))
+        if val:
+            out["BonusAmount"] = val
+
     return out
 
 def extract_from_payslip(pdf_path: str):
@@ -267,6 +280,31 @@ def extract_from_payslip(pdf_path: str):
     m3 = re.search(r'\bNavn\b\s*:\s*([^\n\r]+)', full, re.I)
     if m3:
         out['P_Name'] = _clean(m3.group(1))
+
+    # --- Bonus on payslip (optional) ---
+    # Grab the largest positive amount next to a 'bonus' label
+    bonus_candidates = []
+    for m in re.finditer(r'bonus[^\n\r]*?([\d\.,]+)', full, re.I):
+        val = parse_dk_amount(m.group(1))
+        try:
+            num = float(val)
+            if num > 0:
+                bonus_candidates.append(num)
+        except Exception:
+            pass
+    if bonus_candidates:
+        best = max(bonus_candidates)
+        out['BonusAmount'] = f"{best:.2f}".rstrip('0').rstrip('.')
+
+    # Heuristic bonus year from period or explicit mention
+    m_year = re.search(r'\bbonus(?:året|year)?\s*(?:for\s*)?(20\d{2})\b', full, re.I)
+    if not m_year:
+        # fall back: use "Til:" year if there is a period
+        til = out.get('PeriodTo') or out.get('PeriodFrom')
+        if til and re.match(r'\d{4}-\d{2}-\d{2}', til):
+            m_year = re.match(r'(\d{4})', til)
+    if m_year:
+        out['BonusYear'] = m_year.group(1) if hasattr(m_year, "group") else m_year
 
     return out
 
@@ -358,8 +396,8 @@ ui_ctx["C_CoRegCVR"] = st.text_input("CVR", auto.get("C_CoRegCVR",""))
 ui_ctx["P_Name"] = st.text_input("Medarbejder", auto.get("P_Name",""))
 ui_ctx["P_Address"] = st.text_input("Medarbejder adresse", auto.get("P_Address", ""))
 ui_ctx["MonthlySalary"] = st.text_input("Månedsløn (DKK)", auto.get("MonthlySalary",""))
-ui_ctx["BonusYear"] = st.text_input("Bonusår", "")
-ui_ctx["BonusAmount"] = st.text_input("Bonusbeløb (DKK)", "")
+ui_ctx["BonusYear"] = st.text_input("Bonusår", auto.get("BonusYear",""))
+ui_ctx["BonusAmount"] = st.text_input("Bonusbeløb (DKK)", auto.get("BonusAmount",""))
 ui_ctx["EmploymentStart"] = st.text_input("Ansættelsesstart", auto.get("EmploymentStart",""))
 ui_ctx["TerminationDate"] = st.text_input("Opsigelsesdato", auto.get("TerminationDate",""))
 ui_ctx["SeparationDate"] = st.text_input("Fratrædelsesdato", auto.get("SeparationDate",""))
@@ -420,116 +458,116 @@ if st.button("Generér Fratrædelsesaftale"):
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
 
-col1, col2 = st.columns(2)
-with col1:
-        if st.button("Hent seneste Kontakter & Journaler"):
-            contacts_list = list(paged("/Contacts"))
-            st.session_state.contacts = {c["id"]: c for c in contacts_list}
-            st.session_state.journals = list(paged("/Journals"))
-            json.dump(st.session_state.contacts, open("contacts.json","w"), ensure_ascii=False, indent=2)
-            json.dump(st.session_state.journals, open("journals.json","w"), ensure_ascii=False, indent=2)
-            st.success(f"Hentede {len(st.session_state.contacts)} kontakter og {len(st.session_state.journals)} journaler.")
+# col1, col2 = st.columns(2)
+# with col1:
+#         if st.button("Hent seneste Kontakter & Journaler"):
+#             contacts_list = list(paged("/Contacts"))
+#             st.session_state.contacts = {c["id"]: c for c in contacts_list}
+#             st.session_state.journals = list(paged("/Journals"))
+#             json.dump(st.session_state.contacts, open("contacts.json","w"), ensure_ascii=False, indent=2)
+#             json.dump(st.session_state.journals, open("journals.json","w"), ensure_ascii=False, indent=2)
+#             st.success(f"Hentede {len(st.session_state.contacts)} kontakter og {len(st.session_state.journals)} journaler.")
 
-contacts = st.session_state.contacts
-journals = st.session_state.journals
-if not contacts or not journals:
-    st.info("Tryk på 'Hent seneste Kontakter & Journaler' først.")
-st.write(f"Indlæst {len(contacts)} kontakter, {len(journals)} journaler.")
+# contacts = st.session_state.contacts
+# journals = st.session_state.journals
+# if not contacts or not journals:
+#     st.info("Tryk på 'Hent seneste Kontakter & Journaler' først.")
+# st.write(f"Indlæst {len(contacts)} kontakter, {len(journals)} journaler.")
 
-query = st.text_input("Søg i journaler (navn/nummer):")
-view = [j for j in journals if (query.lower() in (j.get('name') or '').lower()) or (query.lower() in (j.get('number') or '').lower())]
-sel = st.multiselect("Vælg journaler", options=[f"{j.get('number')} — {j.get('name')}" for j in view])
+# query = st.text_input("Søg i journaler (navn/nummer):")
+# view = [j for j in journals if (query.lower() in (j.get('name') or '').lower()) or (query.lower() in (j.get('number') or '').lower())]
+# sel = st.multiselect("Vælg journaler", options=[f"{j.get('number')} — {j.get('name')}" for j in view])
 
-OUT = Path("contracts"); OUT.mkdir(exist_ok=True)
+# OUT = Path("contracts"); OUT.mkdir(exist_ok=True)
 
-def generate_for(j, template_path: str):
-    c = contacts.get(j.get("clientId"))
-    if not c:
-        return None, None, "Ingen klient"
-    if not template_path or not Path(template_path).exists():
-        return None, None, "Skabelon ikke fundet"
+# def generate_for(j, template_path: str):
+#     c = contacts.get(j.get("clientId"))
+#     if not c:
+#         return None, None, "Ingen klient"
+#     if not template_path or not Path(template_path).exists():
+#         return None, None, "Skabelon ikke fundet"
 
-    ctx = {"client": c, "journal": j}
+#     ctx = {"client": c, "journal": j}
 
-    # Gem til disk
-    doc = DocxTemplate(template_path)
-    doc.render(ctx)
-    base = f"{safe_slug(j.get('number') or 'IngenNummer')}_{safe_slug(c.get('name') or 'UkendtKlient')}"
-    filename = OUT / f"{base}.docx"
-    doc.save(filename)
+#     # Gem til disk
+#     doc = DocxTemplate(template_path)
+#     doc.render(ctx)
+#     base = f"{safe_slug(j.get('number') or 'IngenNummer')}_{safe_slug(c.get('name') or 'UkendtKlient')}"
+#     filename = OUT / f"{base}.docx"
+#     doc.save(filename)
 
-    # Kopi i hukommelsen til download
-    bio = BytesIO()
-    doc2 = DocxTemplate(template_path)
-    doc2.render(ctx)
-    doc2.docx.save(bio)
-    bio.seek(0)
+#     # Kopi i hukommelsen til download
+#     bio = BytesIO()
+#     doc2 = DocxTemplate(template_path)
+#     doc2.render(ctx)
+#     doc2.docx.save(bio)
+#     bio.seek(0)
 
-    return filename.name, bio, None
+#     return filename.name, bio, None
 
 
-colA, colB = st.columns(2)
-with colA:
-    if st.button("Generér for valgte"):
-        if not has_api_key():
-            st.error("Manglende API-nøgle. Angiv `LEGIS_API_KEY` i Secrets (⚙️ → Secrets) eller som miljøvariabel.")
-        elif not glob.glob("templates/*.docx"):
-            st.error("Ingen skabeloner fundet i templates/-mappen.")
-        else:
-            sel_template = st.session_state.sel_template
-            count = 0
-            generated = []
-            by_num = {j.get('number'): j for j in journals}
-            for label in sel:
-                num = label.split(" — ", 1)[0]
-                j = by_num.get(num)
-                if not j:
-                    continue
-                try:
-                    fname, buf, err = generate_for(j, sel_template)
-                    if err:
-                        st.error(f"{num}: {err}")
-                    else:
-                        generated.append((num, fname, buf))
-                        count += 1
-                except Exception as e:
-                    st.error(f"{num}: {e}")
-            st.success(f"Genereret {count} fil(er) i contracts/")
-            for num, fname, buf in generated:
-                st.download_button(
-                    label=f"Hent {fname}",
-                    data=buf,
-                    file_name=fname,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
+# colA, colB = st.columns(2)
+# with colA:
+#     if st.button("Generér for valgte"):
+#         if not has_api_key():
+#             st.error("Manglende API-nøgle. Angiv `LEGIS_API_KEY` i Secrets (⚙️ → Secrets) eller som miljøvariabel.")
+#         elif not glob.glob("templates/*.docx"):
+#             st.error("Ingen skabeloner fundet i templates/-mappen.")
+#         else:
+#             sel_template = st.session_state.sel_template
+#             count = 0
+#             generated = []
+#             by_num = {j.get('number'): j for j in journals}
+#             for label in sel:
+#                 num = label.split(" — ", 1)[0]
+#                 j = by_num.get(num)
+#                 if not j:
+#                     continue
+#                 try:
+#                     fname, buf, err = generate_for(j, sel_template)
+#                     if err:
+#                         st.error(f"{num}: {err}")
+#                     else:
+#                         generated.append((num, fname, buf))
+#                         count += 1
+#                 except Exception as e:
+#                     st.error(f"{num}: {e}")
+#             st.success(f"Genereret {count} fil(er) i contracts/")
+#             for num, fname, buf in generated:
+#                 st.download_button(
+#                     label=f"Hent {fname}",
+#                     data=buf,
+#                     file_name=fname,
+#                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+#                 )
 
-with colB:
-    if st.button("Generér ALLE journaler"):
-        if not has_api_key():
-            st.error("Manglende API-nøgle. Angiv `LEGIS_API_KEY` i Secrets (⚙️ → Secrets) eller som miljøvariabel.")
-        elif not glob.glob("templates/*.docx"):
-            st.error("Ingen skabeloner fundet i templates/-mappen.")
-        else:
-            sel_template = st.session_state.sel_template
-            count = 0
-            generated = []
-            for j in journals:
-                try:
-                    fname, buf, err = generate_for(j, sel_template)
-                    if err:
-                        st.error(f"{j.get('number')}: {err}")
-                    else:
-                        generated.append((j.get('number'), fname, buf))
-                        count += 1
-                except Exception as e:
-                    st.error(f"{j.get('number')}: {e}")
-            st.success(f"Genereret {count} fil(er) i contracts/")
-            for num, fname, buf in generated[:10]:
-                st.download_button(
-                    label=f"Hent {fname}",
-                    data=buf,
-                    file_name=fname,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
-            if len(generated) > 10:
-                st.info(f"Viser de første 10 downloads her. Alle filer er gemt i: {OUT.resolve()}")
+# with colB:
+#     if st.button("Generér ALLE journaler"):
+#         if not has_api_key():
+#             st.error("Manglende API-nøgle. Angiv `LEGIS_API_KEY` i Secrets (⚙️ → Secrets) eller som miljøvariabel.")
+#         elif not glob.glob("templates/*.docx"):
+#             st.error("Ingen skabeloner fundet i templates/-mappen.")
+#         else:
+#             sel_template = st.session_state.sel_template
+#             count = 0
+#             generated = []
+#             for j in journals:
+#                 try:
+#                     fname, buf, err = generate_for(j, sel_template)
+#                     if err:
+#                         st.error(f"{j.get('number')}: {err}")
+#                     else:
+#                         generated.append((j.get('number'), fname, buf))
+#                         count += 1
+#                 except Exception as e:
+#                     st.error(f"{j.get('number')}: {e}")
+#             st.success(f"Genereret {count} fil(er) i contracts/")
+#             for num, fname, buf in generated[:10]:
+#                 st.download_button(
+#                     label=f"Hent {fname}",
+#                     data=buf,
+#                     file_name=fname,
+#                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+#                 )
+#             if len(generated) > 10:
+#                 st.info(f"Viser de første 10 downloads her. Alle filer er gemt i: {OUT.resolve()}")
