@@ -286,32 +286,57 @@ def extract_from_payslip(pdf_path: str):
         out['PeriodTo']   = parse_dk_date(m.group(2))
 
     # Prefer obvious monthly-salary labels; ignore hour-like amounts ~160.xx
+    # --- inside extract_from_payslip() ---
+
+    # Prefer obvious monthly-salary labels
     labels = [
-        r'Fast\s*månedsløn', r'Månedsløn', r'Brutto\s*månedsløn',
+        r'Fast\s*månedsløn', r'Brutto\s*månedsløn', r'Månedsløn',
         r'Fast\s*løn', r'Løn\s*\(måned\)'
     ]
+
+    # Look line-by-line so we can choose the right number on that row
+    lines = [ln for ln in full.splitlines() if ln.strip()]
+    found_label_amount = False
     for lab in labels:
-        m2 = re.search(lab + r'[^\d]*([\d\.,]+)', t, re.I)
-        if not m2:
-            continue
-        val = parse_dk_amount(m2.group(1))
-        try:
-            num = float(val)
-        except Exception:
-            continue
-        # Heuristic: monthly salaries are usually > 5,000 DKK
-        if num > 5000:
-            out['MonthlySalary'] = f"{num:.2f}".rstrip('0').rstrip('.')
+        pat = re.compile(lab, re.I)
+        for idx, ln in enumerate(lines):
+            if not pat.search(ln):
+                continue
+            # Include next line too — PDFs often wrap table columns
+            ln_join = ln + (" " + lines[idx + 1] if idx + 1 < len(lines) else "")
+            nums = re.findall(r'[\d\.,]+', ln_join)
+            candidates = []
+            for raw in nums:
+                val = parse_dk_amount(raw)
+                try:
+                    num = float(val)
+                except Exception:
+                    continue
+                # Ignore hour-like values (e.g. 160,33) and keep plausible monthly salaries
+                if 5000 < num < 300000:
+                    candidates.append(num)
+            if candidates:
+                best = max(candidates)
+                out['MonthlySalary'] = f"{best:.2f}".rstrip('0').rstrip('.')
+                found_label_amount = True
+                break
+        if found_label_amount:
             break
-    
-    # Fallback: pick the highest plausible amount on a line mentioning "løn"
+
+    # Fallback: pick the highest plausible amount on a line mentioning "løn",
+    # but skip contexts like "nettoløn" so we don't capture net pay.
     if 'MonthlySalary' not in out:
         salary_candidates = []
-        for mline in re.finditer(r'(?i)l[øo]n[^\n\r]{0,40}?([\d\.,]+)', full):
+        for mline in re.finditer(r'(?i)l[øo]n[^\n\r]{0,80}?([\d\.,]+)', full):
+            segment = full[max(0, mline.start()-20): mline.end()+20]
+            # Skip net pay and taxes/withholdings
+            if re.search(r'netto\s*l[øo]n|nettol[øo]n|netto', segment, re.I):
+                continue
+            if re.search(r'AM\s*-\s*bidrag|AM-bidrag|A\s*-\s*skat|A-skat', segment, re.I):
+                continue
             val = parse_dk_amount(mline.group(1))
             try:
                 num = float(val)
-                # Heuristic range for monthly salary in DKK
                 if 5000 < num < 300000:
                     salary_candidates.append(num)
             except Exception:
