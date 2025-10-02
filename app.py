@@ -407,11 +407,22 @@ ui_ctx["PensionIncluded"] = st.checkbox("Behold pensionsordning?", value=False)
 ui_ctx["LunchSchemeIncluded"] = st.checkbox("Med i frokostordning indtil fritstilling?", value=False)
 ui_ctx["AccrualMonth"] = st.text_input("Optjeningsmåned (fx september)", "")
 ui_ctx["AccrualYear"] = st.text_input("Optjeningsår (fx 2025)", "")
+# --- Mobilkompensation ---
 ui_ctx["MobileCompIncluded"] = st.checkbox("Mobilkompensation med?", value=False)
-ui_ctx["MobileCompAmount"] = st.text_input("Mobilkompensation (kr./md.)", "275")
-ui_ctx["MobileCompStartDate"] = st.text_input("Startdato for mobilkompensation (fx 2025-03-01)", "")
+if ui_ctx["MobileCompIncluded"]:
+    ui_ctx["MobileCompAmount"] = st.text_input("Mobilkompensation (kr./md.)", "275")
+    ui_ctx["MobileCompStartDate"] = st.text_input("Startdato for mobilkompensation (fx 2025-03-01)", "")
+else:
+    # Clear values so template won't accidentally use stale data
+    ui_ctx["MobileCompAmount"] = ""
+    ui_ctx["MobileCompStartDate"] = ""
+
+# --- Overtagelse af telefonnummer ---
 ui_ctx["PhoneTransferIncluded"] = st.checkbox("Overtagelse af telefonnummer?", value=False)
-ui_ctx["PhoneNumber"] = st.text_input("Telefonnummer (fx +45 12 34 56 78)", "")
+if ui_ctx["PhoneTransferIncluded"]:
+    ui_ctx["PhoneNumber"] = st.text_input("Telefonnummer (fx +45 12 34 56 78)", "")
+else:
+    ui_ctx["PhoneNumber"] = ""
 ui_ctx["ManagerName"] = st.text_input("Nærmeste leder (navn)", "")
 ui_ctx["EmploymentClauseRef"] = st.text_input("Henvisning til pkt. i ansættelseskontrakten (fx 12.3)", "")
 ui_ctx["GroupName"] = st.text_input("Navn på koncernen (fx MBWS)", "")
@@ -425,10 +436,17 @@ ui_ctx["AccruedVacationDays"] = st.text_input("Optjente feriedage (antal)", "2,0
 ui_ctx["VacationFundName"] = st.text_input("Feriefond (fx FerieKonto)", "FerieKonto")
 ui_ctx["BonusEligible"] = st.checkbox("Bonus-ordning (STI) gælder?", value=False)
 ui_ctx["LTIEligible"] = st.checkbox("Aktiebaseret aflønning (LTI) gælder?", value=False)
-ui_ctx["LTIProgramName"] = st.text_input("Navn på LTI-program", "Employee Ownership Program")
-ui_ctx["LTIGoodLeaver"] = st.checkbox("Good leaver?", value=True)
-ui_ctx["LTISavingShareName"] = st.text_input("Navn på 'Saving Shares' (fx B-aktier)", "B-aktier")
-ui_ctx["LTIMatchingShareName"] = st.text_input("Navn på 'Matching Shares'", "Matching Shares")
+if ui_ctx["LTIEligible"]:
+    ui_ctx["LTIProgramName"] = st.text_input("Navn på LTI-program", "Employee Ownership Program")
+    ui_ctx["LTIGoodLeaver"] = st.checkbox("Good leaver?", value=True)
+    ui_ctx["LTISavingShareName"] = st.text_input("Navn på 'Saving Shares' (fx B-aktier)", "B-aktier")
+    ui_ctx["LTIMatchingShareName"] = st.text_input("Navn på 'Matching Shares'", "Matching Shares")
+else:
+    # Clear values so the template doesn’t render LTI details when not selected
+    ui_ctx["LTIProgramName"] = ""
+    ui_ctx["LTIGoodLeaver"] = False
+    ui_ctx["LTISavingShareName"] = ""
+    ui_ctx["LTIMatchingShareName"] = ""
 
 # Vælg skabelon (gælder både enkelt- og batch-generering)
 template_files = sorted(glob.glob("templates/*.docx"))
@@ -532,7 +550,7 @@ if st.button("Generér Fratrædelsesaftale"):
 #                         count += 1
 #                 except Exception as e:
 #                     st.error(f"{num}: {e}")
-#             st.success(f"Genereret {count} fil(er) i contracts/")
+#             st.success(f"Genereret {count} fil(er) i contracts/")´
 #             for num, fname, buf in generated:
 #                 st.download_button(
 #                     label=f"Hent {fname}",
