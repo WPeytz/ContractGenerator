@@ -4,9 +4,14 @@ from io import BytesIO
 import streamlit as st
 from docxtpl import DocxTemplate
 from pathlib import Path
-import pdfplumber, re
+import pdfplumber
 from dateutil import parser as dparse
 from dotenv import load_dotenv
+import locale
+try:
+    locale.setlocale(locale.LC_ALL, "da_DK.UTF-8")
+except locale.Error:
+    pass  # fallback if locale isn't available
 
 
 def _to_plain(obj):
@@ -266,6 +271,15 @@ def extract_from_payslip(pdf_path: str):
 
     return out
 
+def format_currency(val):
+    """Format numeric string to Danish style e.g. 36.500,00"""
+    try:
+        num = float(val)
+        return locale.format_string("%'.2f", num, grouping=True) \
+                     .replace(".", "X").replace(",", ".").replace("X", ",")
+    except Exception:
+        return val or ""
+
 def build_context(contract_data, payslip_data, ui):
     sal = payslip_data.get("MonthlySalary") or contract_data.get("MonthlySalary") or ui.get("MonthlySalary")
     norm_sal = parse_dk_amount(sal) or sal
@@ -275,11 +289,32 @@ def build_context(contract_data, payslip_data, ui):
         "C_CoRegCVR": contract_data.get("C_CoRegCVR") or ui.get("C_CoRegCVR"),
         "P_Name": contract_data.get("P_Name") or ui.get("P_Name"),
         "P_Address": ui.get("P_Address", ""),
-        "MonthlySalary": norm_sal,
+        "MonthlySalary": format_currency(norm_sal) if norm_sal else "",
+        "BonusYear": ui.get("BonusYear"),
+        "BonusAmount": ui.get("BonusAmount"),
         "EmploymentStart": contract_data.get("EmploymentStart") or ui.get("EmploymentStart"),
         "TerminationDate": ui.get("TerminationDate"),
         "SeparationDate": ui.get("SeparationDate"),
         "GardenLeaveStart": ui.get("GardenLeaveStart"),
+        "AccrualMonth": ui.get("AccrualMonth"),
+        "AccrualYear": ui.get("AccrualYear"),
+        "HealthInsuranceIncluded": ui.get("HealthInsuranceIncluded"),
+        "PensionIncluded": ui.get("PensionIncluded"),
+        "LunchSchemeIncluded": ui.get("LunchSchemeIncluded"),
+        "PhoneTransferIncluded": ui.get("PhoneTransferIncluded"),
+        "PhoneNumber": ui.get("PhoneNumber"),
+        "ManagerName": ui.get("ManagerName"),
+        "EmploymentClauseRef": ui.get("EmploymentClauseRef"),
+        "GroupName": ui.get("GroupName"),
+        "SignatureDeadline": ui.get("SignatureDeadline"),
+        "SignatureMonth": ui.get("SignatureMonth"),
+        "SignatureYear": ui.get("SignatureYear"),
+        "RepName": ui.get("RepName"),
+        "RepTitle": ui.get("RepTitle"),
+        "ConfidentialityClauseRef": ui.get("ConfidentialityClauseRef"),
+        "AccruedVacationDays": ui.get("AccruedVacationDays"),
+        "VacationFundName": ui.get("VacationFundName"),
+        "BonusEligible": ui.get("BonusEligible"),
     }
 
 # --- NY SEKTIONS-UI ---
@@ -310,32 +345,62 @@ ui_ctx["C_CoRegCVR"] = st.text_input("CVR", auto.get("C_CoRegCVR",""))
 ui_ctx["P_Name"] = st.text_input("Medarbejder", auto.get("P_Name",""))
 ui_ctx["P_Address"] = st.text_input("Medarbejder adresse", auto.get("P_Address", ""))
 ui_ctx["MonthlySalary"] = st.text_input("Månedsløn (DKK)", auto.get("MonthlySalary",""))
+ui_ctx["BonusYear"] = st.text_input("Bonusår", "")
+ui_ctx["BonusAmount"] = st.text_input("Bonusbeløb (DKK)", "")
 ui_ctx["EmploymentStart"] = st.text_input("Ansættelsesstart", auto.get("EmploymentStart",""))
 ui_ctx["TerminationDate"] = st.text_input("Opsigelsesdato", auto.get("TerminationDate",""))
 ui_ctx["SeparationDate"] = st.text_input("Fratrædelsesdato", auto.get("SeparationDate",""))
 ui_ctx["GardenLeaveStart"] = st.text_input("Fritstilling fra", auto.get("GardenLeaveStart",""))
+ui_ctx["HealthInsuranceIncluded"] = st.checkbox("Behold sundhedsforsikring?", value=False)
+ui_ctx["PensionIncluded"] = st.checkbox("Behold pensionsordning?", value=False)
+ui_ctx["LunchSchemeIncluded"] = st.checkbox("Med i frokostordning indtil fritstilling?", value=False)
+ui_ctx["AccrualMonth"] = st.text_input("Optjeningsmåned (fx september)", "")
+ui_ctx["AccrualYear"] = st.text_input("Optjeningsår (fx 2025)", "")
+ui_ctx["MobileCompIncluded"] = st.checkbox("Mobilkompensation med?", value=False)
+ui_ctx["MobileCompAmount"] = st.text_input("Mobilkompensation (kr./md.)", "275")
+ui_ctx["MobileCompStartDate"] = st.text_input("Startdato for mobilkompensation (fx 2025-03-01)", "")
+ui_ctx["PhoneTransferIncluded"] = st.checkbox("Overtagelse af telefonnummer?", value=False)
+ui_ctx["PhoneNumber"] = st.text_input("Telefonnummer (fx +45 12 34 56 78)", "")
+ui_ctx["ManagerName"] = st.text_input("Nærmeste leder (navn)", "")
+ui_ctx["EmploymentClauseRef"] = st.text_input("Henvisning til pkt. i ansættelseskontrakten (fx 12.3)", "")
+ui_ctx["GroupName"] = st.text_input("Navn på koncernen (fx MBWS)", "")
+ui_ctx["SignatureDeadline"] = st.text_input("Frist for underskrift (dato)", "")
+ui_ctx["SignatureMonth"] = st.text_input("Underskriftsmåned (fx september)", "")
+ui_ctx["SignatureYear"]  = st.text_input("Underskriftsår (fx 2025)", "")
+ui_ctx["RepName"]  = st.text_input("Virksomhedens repræsentant (navn)", "")
+ui_ctx["RepTitle"] = st.text_input("Titel (fx Partner / HR-chef)", "")
+ui_ctx["ConfidentialityClauseRef"] = st.text_input("Henvisning til tavshedspligt (pkt. i ansættelseskontrakten)", "")
+ui_ctx["AccruedVacationDays"] = st.text_input("Optjente feriedage (antal)", "2,08")
+ui_ctx["VacationFundName"] = st.text_input("Feriefond (fx FerieKonto)", "FerieKonto")
+ui_ctx["BonusEligible"] = st.checkbox("Bonus-ordning (STI) gælder?", value=False)
+
+# Vælg skabelon (gælder både enkelt- og batch-generering)
+template_files = sorted(glob.glob("templates/*.docx"))
+if "sel_template" not in st.session_state:
+    st.session_state.sel_template = template_files[0] if template_files else ""
+
+st.session_state.sel_template = st.selectbox(
+    "Vælg skabelon (.docx)",
+    options=template_files if template_files else ["<Ingen skabeloner fundet>"],
+    index=0 if template_files else 0,
+    disabled=not template_files,
+)
 
 if st.button("Generér Fratrædelsesaftale"):
     ctx = build_context(auto, auto, ui_ctx)
-    tpl = "templates/Fratrædelsesaftale - DA.docx"
+    tpl = st.session_state.sel_template or "templates/Fratrædelsesaftale - DA.docx"
     if not Path(tpl).exists():
-        st.error("Skabelon ikke fundet: templates/Fratrædelsesaftale - DA.docx")
+        st.error(f"Skabelon ikke fundet: {tpl}")
     else:
         doc = DocxTemplate(tpl)
         doc.render(ctx)
         bio = BytesIO(); doc.docx.save(bio); bio.seek(0)
-        st.download_button("Download aftale", bio,
+        st.download_button(
+            "Download aftale",
+            bio,
             file_name=f"Fratraedelsesaftale_{safe_slug(ctx['P_Name'])}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
-    # Find skabeloner
-    template_files = sorted(glob.glob("templates/*.docx"))
-    sel_template = st.selectbox(
-        "Vælg skabelon (.docx)",
-        options=template_files if template_files else ["<Ingen skabeloner fundet>"],
-        index=0,
-        disabled=not template_files,
-    )
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
 
 col1, col2 = st.columns(2)
 with col1:
