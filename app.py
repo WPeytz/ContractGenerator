@@ -440,17 +440,19 @@ else:
 ui_ctx["PhoneTransferIncluded"] = st.checkbox("Overtagelse af telefonnummer?", value=False)
 if ui_ctx["PhoneTransferIncluded"]:
     ui_ctx["PhoneNumber"] = st.text_input("Telefonnummer (fx +45 12 34 56 78)", "")
+    ui_ctx["ManagerName"] = st.text_input("Nærmeste leder (navn)", "")
 else:
     ui_ctx["PhoneNumber"] = ""
-ui_ctx["ManagerName"] = st.text_input("Nærmeste leder (navn)", "")
-ui_ctx["EmploymentClauseRef"] = st.text_input("Henvisning til pkt. i ansættelseskontrakten (fx 12.3)", "")
+    ui_ctx["ManagerName"] = ""
+
+ui_ctx["EmploymentClauseRef"] = st.text_input("Henvisning til imaterielle rettigheder pkt. i ansættelseskontrakten", "")
+ui_ctx["ConfidentialityClauseRef"] = st.text_input("Henvisning til tavshedspligt (pkt. i ansættelseskontrakten)", "")
 ui_ctx["GroupName"] = st.text_input("Navn på koncernen (fx MBWS)", "")
 ui_ctx["SignatureDeadline"] = st.text_input("Frist for underskrift (dato)", "")
 ui_ctx["SignatureMonth"] = st.text_input("Underskriftsmåned (fx september)", "")
 ui_ctx["SignatureYear"]  = st.text_input("Underskriftsår (fx 2025)", "")
 ui_ctx["RepName"]  = st.text_input("Virksomhedens repræsentant (navn)", "")
-ui_ctx["RepTitle"] = st.text_input("Titel (fx Partner / HR-chef)", "")
-ui_ctx["ConfidentialityClauseRef"] = st.text_input("Henvisning til tavshedspligt (pkt. i ansættelseskontrakten)", "")
+ui_ctx["RepTitle"] = st.text_input("Virksomhedens repræsentant Titel (fx Partner / HR-chef)", "")
 ui_ctx["BonusEligible"] = st.checkbox("Bonus-ordning (STI) gælder?", value=False)
 ui_ctx["LTIEligible"] = st.checkbox("Aktiebaseret aflønning (LTI) gælder?", value=False)
 if ui_ctx["LTIEligible"]:
