@@ -84,54 +84,118 @@ with st.sidebar:
     if not has_api_key():
         st.error("Mangler API-nøgle. Tilføj `LEGIS_API_KEY` i Streamlit Secrets (Cloud) eller som miljøvariabel lokalt.")
 
-def _clean(s): return re.sub(r'\s+', ' ', (s or '')).strip()
+# --- Helpers (DK parsing) ---
+DK_POSTAL = r"\b[0-9]{4}\b"
+
+def _clean(s):
+    return re.sub(r'\s+', ' ', (s or '')).strip()
+
+def parse_dk_amount(s: str):
+    """Parse '36.500,00' or '36,500.00' or '36500' to canonical '36500.00' string."""
+    if not s:
+        return ""
+    s = s.strip().replace(' ', '')
+    # European format (comma decimals) or mixed
+    if re.search(r'\d,\d{1,2}$', s) or (',' in s and '.' in s):
+        s = s.replace('.', '').replace(',', '.')
+    else:
+        s = s.replace(',', '')
+    m = re.search(r'[-+]?\d+(?:\.\d+)?', s)
+    return m.group(0) if m else ""
+
+def parse_dk_date(s: str):
+    try:
+        return dparse.parse(s, dayfirst=True, fuzzy=True).date().isoformat()
+    except Exception:
+        return s
 
 def extract_from_contract(pdf_path: str):
     out = {}
     with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    t = _clean(text)
+        pages = [page.extract_text() or "" for page in pdf.pages]
+    full = "\n".join(pages)
+    t = _clean(full)
 
-    # Arbejdsgiver (CVR, navn, adresse)
-    m = re.search(r'CVR[\s\-:]*([0-9]{8})', t)
-    if m: out['C_CoRegCVR'] = m.group(1)
-    if "MBWS" in t: out['C_Name'] = "MBWS"
-    # Medarbejdernavn
-    m2 = re.search(r'AND\s+([A-ZÆØÅa-zæøå\s]+)\s+CPR', t)
-    if m2: out['P_Name'] = m2.group(1).strip()
-    # Startdato
-    m3 = re.search(r'With effect from ([A-Za-z0-9,\s]+?), the Employee is employed', t)
+    # CVR
+    m = re.search(r'\bCVR\b[\s\-:]*([0-9]{8})', t, re.I)
+    if m:
+        out['C_CoRegCVR'] = m.group(1)
+
+    # Employer / employee blocks around BETWEEN ... AND ...
+    m_between = re.search(r'BETWEEN\s+(.+?)\s+AND\s+(.+)', full, re.I | re.S)
+    if m_between:
+        emp_block = _clean(m_between.group(1))
+        ee_block  = _clean(m_between.group(2))
+
+        emp_lines = [l.strip() for l in re.split(r'[\r\n]+', emp_block) if l.strip()]
+        if emp_lines:
+            out['C_Name'] = emp_lines[0]
+        for i in range(1, min(4, len(emp_lines))):
+            if re.search(DK_POSTAL, emp_lines[i]):
+                out['C_Address'] = " ".join(emp_lines[1:i+1])
+                break
+
+        ee_part = ee_block.split("CPR", 1)[0]
+        ee_lines = [l.strip() for l in re.split(r'[\r\n]+', ee_part) if l.strip()]
+        if ee_lines:
+            out['P_Name'] = ee_lines[0]
+            for i in range(1, min(5, len(ee_lines))):
+                if re.search(DK_POSTAL, ee_lines[i]):
+                    out['P_Address'] = " ".join(ee_lines[1:i+1])
+                    break
+
+    # Employment start
+    m3 = re.search(r'With effect from ([A-Za-z0-9,\.\-\/\s]+?), the Employee is employed', full, re.I)
     if m3:
-        try: out['EmploymentStart'] = dparse.parse(m3.group(1)).date().isoformat()
-        except: out['EmploymentStart'] = m3.group(1)
-    # Løn
-    m4 = re.search(r'fixed annual salary of DKK\s*([\d\.,]+)', t)
+        out['EmploymentStart'] = parse_dk_date(m3.group(1))
+
+    # Annual salary → monthly
+    m4 = re.search(r'fixed annual salary of DKK\s*([\d\.,]+)', full, re.I)
     if m4:
-        annual = float(m4.group(1).replace('.','').replace(',',''))
-        out['MonthlySalary'] = str(round(annual/12))
+        annual_raw = parse_dk_amount(m4.group(1))
+        try:
+            monthly = float(annual_raw) / 12.0
+            out['MonthlySalary'] = f"{monthly:.2f}".rstrip('0').rstrip('.')
+        except Exception:
+            pass
+
     return out
 
 def extract_from_payslip(pdf_path: str):
     out = {}
     with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    t = _clean(text)
-    m = re.search(r'Fra:\s*([0-9\-\.\/]+).*?Til:\s*([0-9\-\.\/]+)', t)
+        pages = [page.extract_text() or "" for page in pdf.pages]
+    full = "\n".join(pages)
+    t = _clean(full)
+
+    # Period
+    m = re.search(r'\bFra:\s*([0-9\-\.\/]+).*?\bTil:\s*([0-9\-\.\/]+)', full, re.I | re.S)
     if m:
-        out['PeriodFrom'] = m.group(1)
-        out['PeriodTo'] = m.group(2)
-    m2 = re.search(r'Fast månedsløn[^\d]*([\d\.,]+)', t)
-    if m2: out['MonthlySalary'] = m2.group(1)
+        out['PeriodFrom'] = parse_dk_date(m.group(1))
+        out['PeriodTo']   = parse_dk_date(m.group(2))
+
+    # Fast månedsløn
+    m2 = re.search(r'Fast\s*månedsløn[^\d]*([\d\.,]+)', full, re.I)
+    if m2:
+        out['MonthlySalary'] = parse_dk_amount(m2.group(1))
+
+    # Employee name, if present
+    m3 = re.search(r'\bNavn\b\s*:\s*([^\n\r]+)', full, re.I)
+    if m3:
+        out['P_Name'] = _clean(m3.group(1))
+
     return out
 
 def build_context(contract_data, payslip_data, ui):
+    sal = payslip_data.get("MonthlySalary") or contract_data.get("MonthlySalary") or ui.get("MonthlySalary")
+    norm_sal = parse_dk_amount(sal) or sal
     return {
         "C_Name": contract_data.get("C_Name") or ui.get("C_Name"),
-        "C_Address": ui.get("C_Address",""),
+        "C_Address": ui.get("C_Address", ""),
         "C_CoRegCVR": contract_data.get("C_CoRegCVR") or ui.get("C_CoRegCVR"),
         "P_Name": contract_data.get("P_Name") or ui.get("P_Name"),
-        "P_Address": ui.get("P_Address",""),
-        "MonthlySalary": payslip_data.get("MonthlySalary") or contract_data.get("MonthlySalary"),
+        "P_Address": ui.get("P_Address", ""),
+        "MonthlySalary": norm_sal,
         "EmploymentStart": contract_data.get("EmploymentStart") or ui.get("EmploymentStart"),
         "TerminationDate": ui.get("TerminationDate"),
         "SeparationDate": ui.get("SeparationDate"),
@@ -158,15 +222,15 @@ if payslip_file:
 st.subheader("Ret/tilføj oplysninger")
 ui_ctx = {}
 ui_ctx["C_Name"] = st.text_input("Arbejdsgiver", auto.get("C_Name",""))
-ui_ctx["C_Address"] = st.text_input("Arbejdsgiver adresse", "")
+ui_ctx["C_Address"] = st.text_input("Arbejdsgiver adresse", auto.get("C_Address", ""))
 ui_ctx["C_CoRegCVR"] = st.text_input("CVR", auto.get("C_CoRegCVR",""))
 ui_ctx["P_Name"] = st.text_input("Medarbejder", auto.get("P_Name",""))
-ui_ctx["P_Address"] = st.text_input("Medarbejder adresse", "")
+ui_ctx["P_Address"] = st.text_input("Medarbejder adresse", auto.get("P_Address", ""))
 ui_ctx["MonthlySalary"] = st.text_input("Månedsløn (DKK)", auto.get("MonthlySalary",""))
 ui_ctx["EmploymentStart"] = st.text_input("Ansættelsesstart", auto.get("EmploymentStart",""))
-ui_ctx["TerminationDate"] = st.text_input("Opsigelsesdato")
-ui_ctx["SeparationDate"] = st.text_input("Fratrædelsesdato")
-ui_ctx["GardenLeaveStart"] = st.text_input("Fritstilling fra")
+ui_ctx["TerminationDate"] = st.text_input("Opsigelsesdato", auto.get("TerminationDate",""))
+ui_ctx["SeparationDate"] = st.text_input("Fratrædelsesdato", auto.get("SeparationDate",""))
+ui_ctx["GardenLeaveStart"] = st.text_input("Fritstilling fra", auto.get("GardenLeaveStart",""))
 
 if st.button("Generér Fratrædelsesaftale"):
     ctx = build_context(auto, auto, ui_ctx)
