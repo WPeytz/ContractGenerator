@@ -123,6 +123,9 @@ def extract_from_contract(pdf_path: str):
     full = "\n".join(pages)
     t = _clean(full)
 
+    if show_debug:
+        st.expander("Kontrakt: rå tekst").text(full[:20000])
+
     # CVR
     m = re.search(r'\bCVR\b[\s\-:]*([0-9]{8})', t, re.I)
     if m:
@@ -134,37 +137,56 @@ def extract_from_contract(pdf_path: str):
         emp_block = _clean(m_between.group(1))
         ee_block  = _clean(m_between.group(2))
 
+        # Employer
         emp_lines = [l.strip() for l in re.split(r'[\r\n]+', emp_block) if l.strip()]
         if emp_lines:
             out['C_Name'] = emp_lines[0]
-        for i in range(1, min(4, len(emp_lines))):
-            if re.search(DK_POSTAL, emp_lines[i]):
-                out['C_Address'] = " ".join(emp_lines[1:i+1])
+        addr_parts = []
+        for line in emp_lines[1:5]:
+            addr_parts.append(line)
+            if re.search(DK_POSTAL, line):
                 break
+        if addr_parts:
+            out['C_Address'] = " ".join(addr_parts)
 
-        ee_part = ee_block.split("CPR", 1)[0]
-        ee_lines = [l.strip() for l in re.split(r'[\r\n]+', ee_part) if l.strip()]
-        if ee_lines:
-            out['P_Name'] = ee_lines[0]
-            for i in range(1, min(5, len(ee_lines))):
-                if re.search(DK_POSTAL, ee_lines[i]):
-                    out['P_Address'] = " ".join(ee_lines[1:i+1])
-                    break
+        # Employee: name = text until first digit/punctuation that typically starts address
+        m_name = re.search(r'^([^\d,\(\)\n\r]+)', ee_block)
+        if m_name:
+            out['P_Name'] = _clean(m_name.group(1))
+        # Address = first substring carrying a DK postal code
+        m_addr = re.search(r'([\wÆØÅæøå\.\-\,\s]+?\b\d{4}\b\s+[\wÆØÅæøå\-\s]+)', ee_block)
+        if m_addr:
+            out['P_Address'] = _clean(m_addr.group(1))
 
     # Employment start
-    m3 = re.search(r'With effect from ([A-Za-z0-9,\.\-\/\s]+?), the Employee is employed', full, re.I)
+    m3 = re.search(r'With effect from ([A-Za-z0-9,\.\-\/\s]+?),\s*the Employee is employed', full, re.I)
     if m3:
         out['EmploymentStart'] = parse_dk_date(m3.group(1))
 
-    # Annual salary → monthly
-    m4 = re.search(r'fixed annual salary of DKK\s*([\d\.,]+)', full, re.I)
-    if m4:
-        annual_raw = parse_dk_amount(m4.group(1))
+    # Salary (handle annual or monthly)
+    patterns = [
+        r'fixed\s+annual\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)',
+        r'(?:gross\s+)?monthly\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)',
+        r'\bmånedsløn\b[^\d]*([\d\.,]+)',
+        r'\bårsløn\b[^\d]*([\d\.,]+)'
+    ]
+    monthly = None
+    for pat in patterns:
+        m4 = re.search(pat, t, re.I)
+        if not m4:
+            continue
+        amt = parse_dk_amount(m4.group(1))
         try:
-            monthly = float(annual_raw) / 12.0
-            out['MonthlySalary'] = f"{monthly:.2f}".rstrip('0').rstrip('.')
+            if 'årsløn' in pat or 'annual' in pat:
+                monthly = float(amt) / 12.0
+            else:
+                monthly = float(amt)
+            break
         except Exception:
             pass
+
+    if monthly is not None:
+        out['MonthlySalary'] = f"{monthly:.2f}".rstrip('0').rstrip('.')
 
     return out
 
@@ -175,18 +197,35 @@ def extract_from_payslip(pdf_path: str):
     full = "\n".join(pages)
     t = _clean(full)
 
+    if show_debug:
+        st.expander("Lønseddel: rå tekst").text(full[:20000])
+
     # Period
     m = re.search(r'\bFra:\s*([0-9\-\.\/]+).*?\bTil:\s*([0-9\-\.\/]+)', full, re.I | re.S)
     if m:
         out['PeriodFrom'] = parse_dk_date(m.group(1))
         out['PeriodTo']   = parse_dk_date(m.group(2))
 
-    # Fast månedsløn
-    m2 = re.search(r'Fast\s*månedsløn[^\d]*([\d\.,]+)', full, re.I)
-    if m2:
-        out['MonthlySalary'] = parse_dk_amount(m2.group(1))
+    # Prefer obvious monthly-salary labels; ignore hour-like amounts ~160.xx
+    labels = [
+        r'Fast\s*månedsløn', r'Månedsløn', r'Brutto\s*månedsløn',
+        r'Fast\s*løn', r'Løn\s*\(måned\)'
+    ]
+    for lab in labels:
+        m2 = re.search(lab + r'[^\d]*([\d\.,]+)', t, re.I)
+        if not m2:
+            continue
+        val = parse_dk_amount(m2.group(1))
+        try:
+            num = float(val)
+        except Exception:
+            continue
+        # Heuristic: monthly salaries are usually > 5,000 DKK
+        if num > 5000:
+            out['MonthlySalary'] = f"{num:.2f}".rstrip('0').rstrip('.')
+            break
 
-    # Employee name, if present
+    # Employee name if present
     m3 = re.search(r'\bNavn\b\s*:\s*([^\n\r]+)', full, re.I)
     if m3:
         out['P_Name'] = _clean(m3.group(1))
@@ -211,6 +250,9 @@ def build_context(contract_data, payslip_data, ui):
 
 # --- NY SEKTIONS-UI ---
 st.header("Auto-udfyld Fratrædelsesaftale")
+
+# Show raw PDF text if you need to tune patterns
+show_debug = st.checkbox("Vis rå PDF-tekst (debug)", value=False)
 
 c1, c2 = st.columns(2)
 with c1:
@@ -260,7 +302,7 @@ if st.button("Generér Fratrædelsesaftale"):
         index=0,
         disabled=not template_files,
     )
-    
+
 col1, col2 = st.columns(2)
 with col1:
         if st.button("Hent seneste Kontakter & Journaler"):
