@@ -241,37 +241,64 @@ def extract_from_contract(pdf_path: str):
             out["BonusAmount"] = val
 
         # --- Clause references (optional) ---
-    # Try to detect clause numbers for IP (immaterielle rettigheder) and confidentiality (tavshedspligt)
-    # Patterns handle forms like:
-    #  - "12. Confidentiality"
-    #  - "Section 12 - Confidentiality"
-    #  - "pkt. 12 Tavshedspligt"
-    #  - "clause 10 on intellectual property"
+    # We try multiple heading styles and also line-by-line matching
 
-    # put hyphen first
-    m_conf = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[-.)]?\s*(Confidentiality|Tavshedspligt)', full, re.I)
-    m_ip   = re.search(r'(?:(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[-.)]?\s*(Intellectual\s*Property|Immaterielle\s*rettigheder)', full, re.I)
-
-    # If we matched explicit clause headings, store the clause numbers
-    if m_conf and not out.get("ConfidentialityClauseRef"):
-        out["ConfidentialityClauseRef"] = m_conf.group(1)
-    if m_ip and not out.get("EmploymentClauseRef"):
-        out["EmploymentClauseRef"] = m_ip.group(1)
-
-    # (equivalently, you could escape the hyphen)
-    # m_conf = re.search(... r'\s*[\.\-)]?\s* ...')
-    # m_ip   = re.search(... r'\s*[\.\-)]?\s* ...')
-
-    # Fallbacks like "clause 10 on confidentiality" / "pkt. 10 om immaterielle rettigheder"
-    if not out.get("ConfidentialityClauseRef"):
-        m = re.search(r'(?:clause|pkt\.?|punkt)\s*(\d+(?:\.\d+)*)\s*(?:om|on)?\s*(?:confidentiality|tavshedspligt)', full, re.I)
+    def _find_clause_number(text: str, keywords):
+        """Return first clause number preceding any of the keywords on a line.
+        Accepts patterns like:
+          12. Confidentiality
+          Section 12 - Confidentiality
+          Pkt. 12 Tavshedspligt
+          10) Intellectual Property
+          Also supports:
+          12
+          Confidentiality
+        """
+        # 1) Strict: clause number then keyword on SAME line
+        pat1 = re.compile(
+            r'^(?:\s*(?:Section|Pkt\.?|Punkt)\s*)?(\d{1,2}(?:\.\d+)*)\s*[-–.)]?\s*(%s)\b'
+            % "|".join(keywords),
+            re.I | re.M,
+        )
+        m = pat1.search(text)
         if m:
-            out["ConfidentialityClauseRef"] = m.group(1)
+            return m.group(1)
+
+        # 2) "clause X on <keyword>" (EN/DK)
+        pat2 = re.compile(
+            r'(?:clause|pkt\.?|punkt)\s*(\d+(?:\.\d+)*)\s*(?:om|on)?\s*(%s)'
+            % "|".join(keywords),
+            re.I,
+        )
+        m = pat2.search(text)
+        if m:
+            return m.group(1)
+
+        # 3) Heading-number line ABOVE the keyword on the NEXT line
+        lines_local = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        for i, ln in enumerate(lines_local[:-1]):
+            if re.match(r'^(?:Section\s*)?(\d{1,2}(?:\.\d+)*)\s*[-–.)]?$', ln, re.I):
+                nxt = lines_local[i + 1]
+                if re.search(r'\b(?:%s)\b' % "|".join(keywords), nxt, re.I):
+                    m2 = re.match(r'^(?:Section\s*)?(\d{1,2}(?:\.\d+)*)', ln, re.I)
+                    if m2:
+                        return m2.group(1)
+
+        return None
+
+    # Accept English and Danish keywords (plus a couple common variants)
+    conf_kw = ["Confidentiality", "Tavshedspligt", "Non\\s*Disclosure", "Fortrolighed"]
+    ip_kw   = ["Intellectual\\s*Property", "Immaterielle\\s*rettigheder", "IP\\s*Rights", "Immaterial\\s*rights"]
+
+    if not out.get("ConfidentialityClauseRef"):
+        ref = _find_clause_number(full, conf_kw)
+        if ref:
+            out["ConfidentialityClauseRef"] = ref
 
     if not out.get("EmploymentClauseRef"):
-        m = re.search(r'(?:clause|pkt\.?|punkt)\s*(\d+(?:\.\d+)*)\s*(?:om|on)?\s*(?:intellectual\s*property|immaterielle\s*rettigheder)', full, re.I)
-        if m:
-            out["EmploymentClauseRef"] = m.group(1)        
+        ref = _find_clause_number(full, ip_kw)
+        if ref:
+            out["EmploymentClauseRef"] = ref
 
     return out
 
