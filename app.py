@@ -126,7 +126,6 @@ def extract_from_contract(pdf_path: str):
     if show_debug:
         st.expander("Kontrakt: rå tekst").text(full[:20000])
 
-    # Scan by lines so we can look around anchors
     lines = [l.strip() for l in full.splitlines()]
     lines = [l for l in lines if l is not None]
 
@@ -137,14 +136,13 @@ def extract_from_contract(pdf_path: str):
         if m:
             out["C_CoRegCVR"] = m.group(1)
 
-        # Up to 3 lines above CVR tend to be: name, street, postal/city
         window = [l for l in lines[max(0, cvr_idx-3):cvr_idx] if l]
         if window:
-            out["C_Name"] = window[0]
-            addr_parts = []
-            for w in window[1:]:
-                addr_parts.append(w)
-            # If we see a postal code, keep up to that line
+            # strip BETWEEN/AND from employer name line
+            name_line = re.sub(r'^(BETWEEN|AND)\s+', '', window[0], flags=re.I).strip()
+            out["C_Name"] = name_line
+
+            addr_parts = [w for w in window[1:] if w]
             for j, w in enumerate(addr_parts):
                 if re.search(DK_POSTAL, w):
                     addr_parts = addr_parts[:j+1]
@@ -153,24 +151,37 @@ def extract_from_contract(pdf_path: str):
                 out["C_Address"] = _clean(" ".join(addr_parts))
 
     # --- Employee by CPR anchor ---
-    cpr_idx = next((i for i, l in enumerate(lines) if re.search(r"\bCPR\b\s*:?$", l, re.I) or re.search(r"\bCPR\b\s*:", l, re.I)), None)
+    cpr_idx = next((i for i, l in enumerate(lines)
+                    if re.search(r"\bCPR\b\s*:?$", l, re.I) or re.search(r"\bCPR\b\s*:", l, re.I)), None)
     if cpr_idx is not None:
         window = [l for l in lines[max(0, cpr_idx-4):cpr_idx] if l]
         if window:
-            # Name = last line without digits
+            # Name = last line without digits (strip AND/BETWEEN if present)
             name_line = None
             for w in reversed(window):
                 if not re.search(r"\d", w):
-                    name_line = w
+                    name_line = re.sub(r'^(BETWEEN|AND)\s+', '', w, flags=re.I).strip()
                     break
             if name_line:
                 out["P_Name"] = _clean(name_line)
-            # Address = last line that contains digits / postal code
-            addr_candidates = [w for w in window if re.search(DK_POSTAL, w) or re.search(r"\d", w)]
-            if addr_candidates:
-                out["P_Address"] = _clean(addr_candidates[-1])
+
+            # Address: prefer a postal-code line + the street line above it
+            postal_idx = None
+            for i, w in enumerate(window):
+                if re.search(DK_POSTAL, w):
+                    postal_idx = i
+                    break
+            if postal_idx is not None:
+                street = window[postal_idx-1].strip() if postal_idx-1 >= 0 else ""
+                postal = window[postal_idx].strip()
+                out["P_Address"] = _clean(f"{street} {postal}".strip())
+            else:
+                # Fallback: last line with any digits
+                addr_candidates = [w for w in window if re.search(r"\d", w)]
+                if addr_candidates:
+                    out["P_Address"] = _clean(addr_candidates[-1])
     else:
-        # Fallback if no CPR line is present: grab after AND
+        # Fallback if no CPR line: use block after 'AND'
         m_and = re.search(r"\bAND\b\s*(.+)$", full, re.I | re.M)
         if m_and:
             tail = [t.strip() for t in m_and.group(1).splitlines() if t.strip()]
@@ -181,12 +192,12 @@ def extract_from_contract(pdf_path: str):
                     out.setdefault("P_Address", _clean(t))
                     break
 
-    # Employment start (as before)
+    # Employment start (unchanged)
     m3 = re.search(r"With effect from ([A-Za-z0-9,\.\-\/\s]+?),\s*the Employee is employed", full, re.I)
     if m3:
         out["EmploymentStart"] = parse_dk_date(m3.group(1))
 
-    # Salary: only accept when explicit labels are present
+    # Salary: only when clearly labeled (guards against '3.sal' etc.)
     patterns = [
         r"fixed\s+annual\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)",
         r"(?:gross\s+)?monthly\s+salary\s+of\s+(?:DKK|kr\.?)[\s]*([\d\.,]+)",
@@ -208,7 +219,6 @@ def extract_from_contract(pdf_path: str):
         except Exception:
             pass
 
-    # Guard against floor numbers like "3.sal" etc.
     if monthly is not None and monthly > 5000:
         out["MonthlySalary"] = f"{monthly:.2f}".rstrip('0').rstrip('.')
 
