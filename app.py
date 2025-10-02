@@ -43,6 +43,7 @@ elif auth_status is None:
 with st.sidebar:
     authenticator.logout("Log ud")
 
+
     load_dotenv()
 
 BASE = "https://api.app.legis365.com/public/v1.0"
@@ -83,6 +84,12 @@ with st.sidebar:
     st.subheader("Indstillinger")
     if not has_api_key():
         st.error("Mangler API-nøgle. Tilføj `LEGIS_API_KEY` i Streamlit Secrets (Cloud) eller som miljøvariabel lokalt.")
+
+# Ensure session state keys exist before use
+if "contacts" not in st.session_state:
+    st.session_state["contacts"] = {}
+if "journals" not in st.session_state:
+    st.session_state["journals"] = []
 
 # --- Helpers (DK parsing) ---
 DK_POSTAL = r"\b[0-9]{4}\b"
@@ -253,12 +260,7 @@ if st.button("Generér Fratrædelsesaftale"):
         index=0,
         disabled=not template_files,
     )
-    # Init session state for data
-    if "contacts" not in st.session_state:
-        st.session_state.contacts = {}
-    if "journals" not in st.session_state:
-        st.session_state.journals = []
-
+    
 col1, col2 = st.columns(2)
 with col1:
         if st.button("Hent seneste Kontakter & Journaler"):
