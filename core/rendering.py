@@ -24,6 +24,7 @@ def build_fratradelse_context(
     payslip_data: Mapping[str, str],
     ui_data: Mapping[str, str],
 ) -> Dict[str, str]:
+    """Build context dictionary for fratradelse template rendering."""
     salary = (
         payslip_data.get("MonthlySalary")
         or contract_data.get("MonthlySalary")
@@ -54,11 +55,11 @@ def build_fratradelse_context(
     comp_amount_normalized = parse_dk_amount(comp_amount_raw) if comp_amount_raw else ""
     comp_amount_formatted = format_currency(comp_amount_normalized) if comp_amount_normalized else ""
 
-    pension_comp_amount_raw = ui_data.get("PensionCompensationAmount")
+    pension_comp_amount_raw = ui_data.get("PensionCompensationAmount", "")
     pension_comp_normalized = parse_dk_amount(pension_comp_amount_raw) if pension_comp_amount_raw else ""
     pension_comp_formatted = format_currency(pension_comp_normalized) if pension_comp_normalized else ""
 
-    fixed_comp_raw = ui_data.get("fixedCompensationNumber")
+    fixed_comp_raw = ui_data.get("fixedCompensationNumber", "")
     fixed_comp_normalized = parse_dk_amount(fixed_comp_raw) if fixed_comp_raw else ""
     fixed_comp_formatted = format_currency(fixed_comp_normalized) if fixed_comp_normalized else ""
 
