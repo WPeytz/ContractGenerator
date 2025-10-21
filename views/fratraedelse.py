@@ -5,10 +5,10 @@ from typing import Dict
 import streamlit as st
 
 from core.extractors import extract_from_contract, extract_from_payslip
-from core.rendering import build_fratradelse_context, render_docx
+from core.rendering import build_fratradelse_context, render_docx, render_markdown_to_docx
 from core.utils import safe_slug
 
-DEFAULT_TEMPLATE = Path("templates/Fratrædelsesaftale - DA.docx")
+DEFAULT_TEMPLATE = Path("templates/fratraedelse.md")
 STATE_KEY_TEMPLATE = "fratraedelse_selected_template"
 
 
@@ -59,89 +59,128 @@ def render() -> None:
 
     st.subheader("Ret/tilføj oplysninger")
     ui = {}
+
+    st.write("**Virksomhedsoplysninger**")
     ui["C_Name"] = st.text_input("Arbejdsgiver", defaults.get("C_Name", ""))
     ui["C_Address"] = st.text_input("Arbejdsgiver adresse", defaults.get("C_Address", ""))
     ui["C_CoRegCVR"] = st.text_input("CVR", defaults.get("C_CoRegCVR", ""))
+    ui["C_Representative"] = st.text_input("Virksomhedsrepræsentant (navn til underskrift)", "")
+
+    st.write("**Medarbejderoplysninger**")
     ui["P_Name"] = st.text_input("Medarbejder", defaults.get("P_Name", ""))
     ui["P_Address"] = st.text_input("Medarbejder adresse", defaults.get("P_Address", ""))
     ui["MonthlySalary"] = st.text_input("Månedsløn (DKK)", defaults.get("MonthlySalary", ""))
+
+    st.write("**Datoer**")
     ui["EmploymentStart"] = st.text_input("Ansættelsesstart", defaults.get("EmploymentStart", ""))
+    ui["ContractSignedDate"] = st.text_input("Kontraktunderskrivelsesdato", "")
     ui["TerminationDate"] = st.text_input("Opsigelsesdato", defaults.get("TerminationDate", ""))
     ui["SeparationDate"] = st.text_input("Fratrædelsesdato", defaults.get("SeparationDate", ""))
-    ui["GardenLeaveStart"] = st.text_input("Fritstilling fra", defaults.get("GardenLeaveStart", ""))
+    ui["ReleaseDate"] = st.text_input("Fritstillingsdato", "")
+    ui["AcceptanceDeadline"] = st.text_input("Acceptfrist (fx 15. januar 2025)", "")
+
+    st.write("**Ferie**")
+    ui["HolidayLeave"] = st.checkbox("Ferie afvikles automatisk i fritstillingsperiode?", value=False)
+    if not ui["HolidayLeave"]:
+        ui["NoHolidayDays"] = st.text_input("Antal feriedage der ikke kan afvikles", "")
+    else:
+        ui["NoHolidayDays"] = ""
+
+    st.write("**Løn og fordele**")
+    ui["noOffset"] = st.checkbox("Ingen modregning af løn fra anden ansættelse?", value=False)
     ui["HealthInsuranceIncluded"] = st.checkbox("Behold sundhedsforsikring?", value=False)
     ui["PensionIncluded"] = st.checkbox("Behold pensionsordning?", value=False)
-    ui["LunchSchemeIncluded"] = st.checkbox("Med i frokostordning indtil fritstilling?", value=False)
-    ui["AccrualMonth"] = st.text_input("Ferie Optjeningsmåned (fx september)", "")
-    ui["AccrualYear"] = st.text_input("Ferie Optjeningsår (fx 2025)", "")
-    ui["AccruedVacationDays"] = st.text_input("Optjente feriedage (antal)", "2,08")
-    ui["VacationFundName"] = st.text_input("Feriefond (fx FerieKonto)", "FerieKonto")
-
-    ui["MobileCompIncluded"] = st.checkbox("Mobilkompensation med?", value=False)
-    if ui["MobileCompIncluded"]:
-        ui["MobileCompAmount"] = st.text_input("Mobilkompensation (kr./md.)", "275")
-        ui["MobileCompStartDate"] = st.text_input(
-            "Startdato for mobilkompensation (fx 2025-03-01)",
-            "",
-        )
+    if ui["PensionIncluded"]:
+        ui["PensionPercentage"] = st.text_input("Pensionsprocent", "")
+        ui["PensionAmount"] = st.text_input("Pensionsbeløb (DKK)", "")
     else:
-        ui["MobileCompAmount"] = ""
-        ui["MobileCompStartDate"] = ""
+        ui["PensionPercentage"] = ""
+        ui["PensionAmount"] = ""
 
-    ui["PhoneTransferIncluded"] = st.checkbox("Overtagelse af telefonnummer?", value=False)
-    if ui["PhoneTransferIncluded"]:
-        ui["PhoneNumber"] = st.text_input("Telefonnummer (fx +45 12 34 56 78)", "")
+    ui["LunchSchemeIncluded"] = st.checkbox("Med i frokostordning indtil fritstilling?", value=False)
+
+    st.write("**Mobiltelefon**")
+    ui["MobileCompIncluded"] = st.checkbox("Mobiltelefon med?", value=False)
+    if ui["MobileCompIncluded"]:
+        ui["PhoneComp"] = st.checkbox("Kompensation for aflevering af mobiltelefon?", value=False)
+        ui["PhoneNumber"] = st.text_input("Telefonnummer der kan overtages", "")
         ui["ManagerName"] = st.text_input("Nærmeste leder (navn)", "")
     else:
+        ui["PhoneComp"] = False
         ui["PhoneNumber"] = ""
         ui["ManagerName"] = ""
 
-    ui["EmploymentClauseRef"] = st.text_input(
-        "Henvisning til imaterielle rettigheder pkt. i ansættelseskontrakten",
-        "",
-    )
-    ui["ConfidentialityClauseRef"] = st.text_input(
-        "Henvisning til tavshedspligt (pkt. i ansættelseskontrakten)",
-        "",
-    )
-    ui["GroupName"] = st.text_input("Navn på koncernen (fx MBWS)", "")
-    ui["SignatureDeadline"] = st.text_input("Frist for underskrift (dato)", "")
-    ui["SignatureMonth"] = st.text_input("Underskriftsmåned (fx september)", "")
-    ui["SignatureYear"] = st.text_input("Underskriftsår (fx 2025)", "")
-    ui["RepName"] = st.text_input("Virksomhedens repræsentant (navn)", "")
-    ui["RepTitle"] = st.text_input(
-        "Virksomhedens repræsentant Titel (fx Partner / HR-chef)",
-        "",
-    )
+    st.write("**Anciennitet og funktionærlovens § 2a**")
+    ui["years_12"] = st.checkbox("12+ års anciennitet?", value=False)
+    ui["years_17"] = st.checkbox("17+ års anciennitet?", value=False)
 
-    ui["BonusEligible"] = st.checkbox("Bonus-ordning (STI) gælder?", value=False)
-    if ui["BonusEligible"]:
-        ui["BonusYear"] = st.text_input("Bonusår", defaults.get("BonusYear", ""))
-        ui["BonusAmount"] = st.text_input("Bonusbeløb (DKK)", defaults.get("BonusAmount", ""))
+    st.write("**Aftalt fratrædelsesgodtgørelse**")
+    ui["NoCompensationMonths"] = st.text_input("Antal måneder godtgørelse", "")
+    ui["PensionCompensationAmount"] = st.text_input("Godtgørelse inkl. pension (DKK)", "")
+    ui["fixedCompensationAmount"] = st.checkbox("Brug fast beløb i stedet?", value=False)
+    if ui["fixedCompensationAmount"]:
+        ui["fixedCompensationNumber"] = st.text_input("Fast godtgørelsesbeløb (DKK)", "")
     else:
-        ui["BonusYear"] = ""
-        ui["BonusAmount"] = ""
+        ui["fixedCompensationNumber"] = ""
 
+    st.write("**Bonus (STI)**")
+    bonus_type = st.radio("Bonustype", ["Ingen bonus", "Bonus1 - Programbaseret", "Bonus2 - Fast aftalt beløb"])
+    ui["Bonus1"] = bonus_type == "Bonus1 - Programbaseret"
+    ui["Bonus2"] = bonus_type == "Bonus2 - Fast aftalt beløb"
+
+    if ui["Bonus1"]:
+        ui["CashBonusProgram"] = st.text_input("Navn på bonusprogram", "")
+        ui["BonusYear1"] = st.text_input("Bonus år 1", defaults.get("BonusYear", ""))
+        ui["BonusYear2"] = st.text_input("Bonus år 2 (valgfri)", "")
+        ui["BonusAmount1"] = ""
+        ui["BonusAmount2"] = ""
+    elif ui["Bonus2"]:
+        ui["BonusYear1"] = st.text_input("Bonus år 1", defaults.get("BonusYear", ""))
+        ui["BonusAmount1"] = st.text_input("Fast bonusbeløb år 1 (DKK)", "")
+        ui["BonusYear2"] = st.text_input("Bonus år 2 (valgfri)", "")
+        ui["BonusAmount2"] = st.text_input("Fast bonusbeløb år 2 (DKK, valgfri)", "")
+        ui["CashBonusProgram"] = ""
+    else:
+        ui["CashBonusProgram"] = ""
+        ui["BonusYear1"] = ""
+        ui["BonusAmount1"] = ""
+        ui["BonusYear2"] = ""
+        ui["BonusAmount2"] = ""
+
+    st.write("**Aktiebaseret aflønning (LTI)**")
     ui["LTIEligible"] = st.checkbox("Aktiebaseret aflønning (LTI) gælder?", value=False)
     if ui["LTIEligible"]:
-        ui["LTIProgramName"] = st.text_input("Navn på LTI-program", "Employee Ownership Program")
-        ui["LTIGoodLeaver"] = st.checkbox("Good leaver?", value=True)
-        ui["LTISavingShareName"] = st.text_input("Navn på 'Saving Shares' (fx B-aktier)", "B-aktier")
-        ui["LTIMatchingShareName"] = st.text_input("Navn på 'Matching Shares'", "Matching Shares")
+        ui["LTIRights"] = st.checkbox("LTI rettigheder bevares?", value=False)
     else:
-        ui["LTIProgramName"] = ""
-        ui["LTIGoodLeaver"] = False
-        ui["LTISavingShareName"] = ""
-        ui["LTIMatchingShareName"] = ""
+        ui["LTIRights"] = False
 
-    templates = sorted(Path("templates").glob("*.docx"))
+    st.write("**Juridisk bistand og andre forhold**")
+    ui["noAssistance"] = st.checkbox("Medarbejderen er kun opfordret til (ikke bistået af) juridisk rådgiver?", value=False)
+    if not ui["noAssistance"]:
+        ui["EmployeeLawyer"] = st.text_input("Medarbejderens juridiske rådgiver (navn/organisation)", "")
+    else:
+        ui["EmployeeLawyer"] = ""
+
+    st.write("**Lovvalg og værneting**")
+    ui["Court"] = st.checkbox("Værnetingsaftale (domstol) gælder?", value=False)
+    if ui["Court"]:
+        ui["CityCourt"] = st.text_input("Byrets navn (fx Retten i København)", "")
+    else:
+        ui["CityCourt"] = ""
+
+    ui["Tax"] = st.checkbox("Skatteforhold (§ 7 U) skal medtages?", value=False)
+
+    # Support both .docx and .md templates
+    docx_templates = sorted(Path("templates").glob("*.docx"))
+    md_templates = sorted(Path("templates").glob("*.md"))
+    templates = docx_templates + md_templates
     template_paths = [str(path) for path in templates]
 
     if STATE_KEY_TEMPLATE not in st.session_state:
         st.session_state[STATE_KEY_TEMPLATE] = template_paths[0] if template_paths else ""
 
     selected_template = st.selectbox(
-        "Vælg skabelon (.docx)",
+        "Vælg skabelon (.docx eller .md)",
         options=template_paths if template_paths else [""],
         index=0 if template_paths else 0,
         format_func=lambda path: Path(path).name if path else "<Ingen skabeloner fundet>",
@@ -156,11 +195,20 @@ def render() -> None:
             return
 
         context = build_fratradelse_context(contract_data, payslip_data, ui)
-        buffer = render_docx(template_path, context)
-        filename = f"Fratraedelsesaftale_{safe_slug(context.get('P_Name'))}.docx"
+
+        # Determine output format based on template extension
+        if template_path.suffix == ".md":
+            buffer = render_markdown_to_docx(template_path, context)
+            filename = f"Fratraedelsesaftale_{safe_slug(context.get('P_Name'))}.docx"
+            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else:  # .docx
+            buffer = render_docx(template_path, context)
+            filename = f"Fratraedelsesaftale_{safe_slug(context.get('P_Name'))}.docx"
+            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
         st.download_button(
             "Download aftale",
             buffer,
             file_name=filename,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            mime=mime_type,
         )

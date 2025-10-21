@@ -6,7 +6,7 @@ import streamlit as st
 
 from core.extractors import extract_from_contract
 from core.rendering import render_docx
-from core.utils import safe_slug
+from core.utils import safe_slug, format_date_long
 
 DEFAULT_TEMPLATE = Path("templates/Updated Memo - Termination.docx")
 STATE_KEY_TEMPLATE = "termination_memo_selected_template"
@@ -49,15 +49,15 @@ def render() -> None:
         at_risk_date = st.text_input("Dato for varsling (at risk)", "")
         chosen_communication_date = st.text_input("Dato for kommunikation valgt", "")
         clarification_period_date = st.text_input("Dato for afklaringsperiode", "")
-        deadline_expires_date = st.text_input("Frist udløber", "")
+        deadline_expires_date = st.text_input("Frist udløber dato", "")
         internal_review_date = st.text_input("Intern review dato", "")
-        preliminary_decision_date = st.text_input("Foreløbig beslutning", "")
+        preliminary_decision_date = st.text_input("Foreløbig beslutning dato", "")
 
     context = {
         "P_Name": p_name,
         "P_Title": p_title,
         "C_Name": c_name,
-        "Start_Date": start_date,
+        "Start_Date": format_date_long(start_date),
         "Today_Date": today_date,
         "Signed_Date": signed_date,
         "Acceptence_Date": acceptence_date,

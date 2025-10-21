@@ -44,3 +44,6 @@ urllib3==2.5.0
 streamlit-authenticator==0.3.2
 bcrypt==4.1.2
 pdfplumber==0.9.0
+markdown==3.7
+weasyprint==63.1
+pypandoc==1.14

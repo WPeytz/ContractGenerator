@@ -9,6 +9,7 @@ __all__ = [
     "parse_dk_amount",
     "parse_dk_date",
     "format_currency",
+    "format_date_long",
 ]
 
 try:
@@ -63,7 +64,43 @@ def format_currency(value: str) -> str:
         return ""
     try:
         amount = float(value)
+    except (ValueError, TypeError):
+        return value
+
+    # Try to use locale formatting if Danish locale is available
+    try:
+        formatted = locale.format_string("%.2f", amount, grouping=True)
+        # If locale is da_DK, it should already have correct format (123.456,78)
+        # If not, we'll swap separators in the fallback
+        if "," in formatted or formatted.count(".") > 1:
+            # Locale formatting worked, return as is
+            return formatted
+    except (ValueError, TypeError, locale.Error):
+        pass
+
+    # Fallback: format manually for Danish (period as thousands, comma as decimal)
+    # First format with standard grouping
+    formatted = f"{amount:,.2f}"
+    # Swap: comma->period (thousands), period->comma (decimal)
+    formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+    return formatted
+
+
+def format_date_long(value: str) -> str:
+    """Return a Danish long-form date like ``15. august 2022`` when possible."""
+    if not value:
+        return ""
+    try:
+        dt = date_parser.parse(value, dayfirst=True, fuzzy=True)
     except Exception:
         return value
-    formatted = locale.format_string("%'.2f", amount, grouping=True)
-    return formatted.replace(".", "X").replace(",", ".").replace("X", ",")
+
+    # Danish month names
+    danish_months = {
+        1: "januar", 2: "februar", 3: "marts", 4: "april",
+        5: "maj", 6: "juni", 7: "juli", 8: "august",
+        9: "september", 10: "oktober", 11: "november", 12: "december"
+    }
+
+    month_name = danish_months.get(dt.month, dt.strftime("%B").lower())
+    return f"{dt.day}. {month_name} {dt.year}"

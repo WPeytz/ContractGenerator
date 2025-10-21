@@ -9,12 +9,15 @@ load_dotenv()
 
 st.set_page_config(page_title="Kontraktgenerator", layout="wide")
 
-authenticator, name, username = require_login()
+# Temporarily disable authentication for testing
+# authenticator, name, username = require_login()
+name = "Test User"
+username = "test"
 
-with st.sidebar:
-    st.caption(f"Logget ind som: {name or username}")
-    logout(authenticator, label="Log ud")
-    st.markdown("---")
+# with st.sidebar:
+#     st.caption(f"Logget ind som: {name or username}")
+#     logout(authenticator, label="Log ud")
+#     st.markdown("---")
 
 st.title("Kontraktgenerator")
 if not has_api_key():
