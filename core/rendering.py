@@ -245,9 +245,7 @@ def render_markdown_to_docx(template_path: Path, context: Mapping[str, str]) -> 
 
         try:
             # Convert markdown to docx using pypandoc
-            extra_args = [
-                '--number-sections',  # Enable section numbering
-            ]
+            extra_args = []
             if Path('templates/reference.docx').exists():
                 extra_args.append('--reference-doc=templates/reference.docx')
 
@@ -294,7 +292,7 @@ def render_markdown_to_docx(template_path: Path, context: Mapping[str, str]) -> 
 
         try:
             # Convert markdown to docx using pandoc command
-            cmd = ['pandoc', temp_md_path, '-o', temp_docx_path, '--number-sections']
+            cmd = ['pandoc', temp_md_path, '-o', temp_docx_path]
             if Path('templates/reference.docx').exists():
                 cmd.extend(['--reference-doc=templates/reference.docx'])
 
